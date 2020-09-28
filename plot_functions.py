@@ -12,7 +12,7 @@ COLORMAPS = ["Blues", "Oranges", "Greens", "Reds", "Purples",
              "YlOrBr", "PuRd", "Greys", "YlGn", "GnBu"]
 
 
-def mk_saliency_boxplots(df, criterion, save_file=None, display=True, figsize=(30, 6)):
+def mk_saliency_boxplots(df, criterion, save_file=None, display=True, figsize=(30, 8)):
     tasks = list(df.task.unique())
 
     sns.set_style('white')
@@ -91,7 +91,11 @@ def mk_saliency_boxplots(df, criterion, save_file=None, display=True, figsize=(3
     sup = fig.suptitle(msg, y=1.1, fontsize=25)
 
     if save_file is not None:
-        os.makedirs(save_file, exist_ok=True)
+        save_dir = os.path.dirname(save_file)
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except FileNotFoundError:
+            pass
         fig.savefig(save_file, dpi=100, bbox_inches='tight', bbox_extra_artists=[sup])
 
     if display:
@@ -102,7 +106,7 @@ def mk_saliency_boxplots(df, criterion, save_file=None, display=True, figsize=(3
     return fig, ax_arr
 
 
-def mk_saliency_gridplot(df, mode="importances", save_file=None, display=True, figsize=(96, 12)):
+def mk_saliency_gridplot(df, mode="importances", save_file=None, display=True, figsize=(96, 16)):
     _allowed_modes = ["importances", "coeffs"]
     if mode not in _allowed_modes:
         raise RuntimeError("invalid mode entered.  allowed options: {}".format(_allowed_modes))
@@ -148,7 +152,11 @@ def mk_saliency_gridplot(df, mode="importances", save_file=None, display=True, f
     sup = fig.suptitle(msg, y=1.0, fontsize=20)
 
     if save_file is not None:
-        os.makedirs(save_file, exist_ok=True)
+        save_dir = os.path.dirname(save_file)
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except FileNotFoundError:
+            pass
         fig.savefig(save_file, dpi=200, bbox_inches='tight', bbox_extra_artists=[sup])
 
     if display:
@@ -208,7 +216,11 @@ def mk_saliency_gridhist(df, save_file=None, display=True, figsize=(25, 20)):
     sup = fig.suptitle(msg, y=0.97, fontsize=20)
 
     if save_file is not None:
-        os.makedirs(save_file, exist_ok=True)
+        save_dir = os.path.dirname(save_file)
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except FileNotFoundError:
+            pass
         fig.savefig(save_file, dpi=200, bbox_inches='tight', bbox_extra_artists=[sup])
 
     if display:
@@ -219,7 +231,7 @@ def mk_saliency_gridhist(df, save_file=None, display=True, figsize=(25, 20)):
     return fig, ax_arr
 
 
-def mk_saliency_gridscatter(df, mode="importances", save_file=None, display=True, figsize=(96, 12)):
+def mk_saliency_gridscatter(df, mode="importances", save_file=None, display=True, figsize=(140, 20)):
     _allowed_modes = ["importances", "coeffs"]
     if mode not in _allowed_modes:
         raise RuntimeError("invalid mode entered.  allowed options: {}".format(_allowed_modes))
@@ -253,22 +265,22 @@ def mk_saliency_gridscatter(df, mode="importances", save_file=None, display=True
             z = z[best_idxs_dict[task]]
             vminmax = max(abs(z))
 
-            s = ax_arr[i, j].scatter(
-                x=x[z != 0],
-                y=y[z != 0],
-                c=z[z != 0],
-                cmap=COLORMAPS[i],
-                s=120,
-                vmin=0,
-                vmax=vminmax,
-                edgecolors='k',
-                linewidths=0.4,
-            )
             _ = ax_arr[i, j].scatter(
                 x=x[z == 0],
                 y=y[z == 0],
                 color='w',
                 s=50,
+                edgecolors='k',
+                linewidths=0.4,
+            )
+            s = ax_arr[i, j].scatter(
+                x=x[z != 0],
+                y=y[z != 0],
+                c=z[z != 0],
+                cmap=COLORMAPS[i] if mode == 'importances' else 'seismic',
+                s=120,
+                vmin=0 if mode == 'importances' else -vminmax,
+                vmax=vminmax,
                 edgecolors='k',
                 linewidths=0.4,
             )
@@ -291,8 +303,12 @@ def mk_saliency_gridscatter(df, mode="importances", save_file=None, display=True
     sup = fig.suptitle(msg, y=1.0, fontsize=25)
 
     if save_file is not None:
-        os.makedirs(save_file, exist_ok=True)
-        fig.savefig(save_file, dpi=600, bbox_inches='tight', bbox_extra_artists=[sup])
+        save_dir = os.path.dirname(save_file)
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except FileNotFoundError:
+            pass
+        fig.savefig(save_file, dpi=300, bbox_inches='tight', bbox_extra_artists=[sup])
 
     if display:
         plt.show(fig)

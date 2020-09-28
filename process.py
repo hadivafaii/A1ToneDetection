@@ -7,9 +7,170 @@ from pathlib import Path
 from scipy.stats import zscore
 from tqdm import tqdm
 from os.path import join as pjoin
+from prettytable import PrettyTable
+from collections import Counter
 import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_style('darkgrid')
+
+
+def summarize_data(load_file, save_file=None):
+    all_trial_types = [
+        'correctreject', 'early', 'earlyfalsealarm', 'earlyhit',
+        'falsealarm', 'hit', 'miss', 'target', 'nontarget']
+    stim_info_types = ['stimfrequency', 'stimlevel']
+
+    base_cols = ['Date', 'Subject Name', 'Good Cells', 'Num Trials']
+
+    t_behavior_detailed = PrettyTable(base_cols + all_trial_types + stim_info_types)
+    t_passive_detailed = PrettyTable(base_cols + stim_info_types)
+
+    tot_expts = 0
+    tot_good_cells = 0
+    tot_behavior_trials = 0
+    tot_passive_trials = 0
+    animal_names_all = []
+    trial_types_counter = Counter()
+    behavior_frequencies_counter = Counter()
+    passive_frequencies_counter = Counter()
+    behavior_stimlevel_counter = Counter()
+    passive_stimlevel_counter = Counter()
+
+    h5py_file = h5py.File(load_file, "r")
+    for expt in h5py_file:
+        tot_expts += 1
+
+        animal_name, date = expt.split('_')
+        animal_names_all.append(animal_name)
+
+        behavior = h5py_file[expt]['behavior']
+        passive = h5py_file[expt]['passive']
+
+        nb_good_neurons = min(len(list(behavior['good_cells'])), len(list(passive['good_cells'])))
+        tot_good_cells += nb_good_neurons
+
+        behavior_nb_trials = behavior['dff'].shape[1]
+        passive_nb_trials = passive['dff'].shape[1]
+
+        tot_behavior_trials += behavior_nb_trials
+        tot_passive_trials += passive_nb_trials
+
+        base_row = [date, animal_name, nb_good_neurons]
+
+        # behavior
+        row = base_row + [behavior_nb_trials]
+
+        behavior_trial_info = behavior['trial_info']
+        for k in all_trial_types:
+            if k in behavior_trial_info.keys():
+                num = sum(behavior_trial_info[k])
+                tot = len(behavior_trial_info[k])
+                row += ["{:d} ({:d} {:s})".format(num, int(np.rint(num / tot * 100)), "%")]
+                trial_types_counter[k] += num
+            else:
+                row += ['']
+        for k in stim_info_types:
+            if k in behavior_trial_info.keys():
+                x_list = list(np.unique(behavior_trial_info[k]))
+                row.append(x_list) if len(x_list) > 1 else row.extend(x_list)
+            else:
+                row += ['']
+
+        t_behavior_detailed.add_row(row)
+
+        try:
+            for freq in list(behavior_trial_info['stimfrequency']):
+                behavior_frequencies_counter[freq] += 1
+        except KeyError:
+            continue
+        try:
+            for stim_lvl in list(behavior_trial_info['stimlevel']):
+                behavior_stimlevel_counter[stim_lvl] += 1
+        except KeyError:
+            continue
+
+        # passive
+        row = base_row + [passive_nb_trials]
+
+        passive_trial_info = passive['trial_info']
+        for k in stim_info_types:
+            if k in passive_trial_info.keys():
+                x_list = list(np.unique(passive_trial_info[k]))
+                row.append(x_list) if len(x_list) > 1 else row.extend(x_list)
+            else:
+                row += ['']
+
+        t_passive_detailed.add_row(row)
+
+        try:
+            for freq in list(passive_trial_info['stimfrequency']):
+                passive_frequencies_counter[freq] += 1
+        except KeyError:
+            continue
+        try:
+            for stim_lvl in list(passive_trial_info['stimlevel']):
+                passive_stimlevel_counter[stim_lvl] += 1
+        except KeyError:
+            continue
+
+    h5py_file.close()
+
+    msg1 = "*** Data Summary ***\n"
+    msg1 += '-' * 45
+    msg1 += "\n- num experiments: {:d},\n- num animals: {:d},\n- num good cells: {:d},\
+    \n- num behavior trials {:d},\n- num passive trials {:d},\
+    \n\n- percent different trials:\n"
+
+    msg1 = msg1.format(
+        tot_expts, len(list(np.unique(animal_names_all))), tot_good_cells,
+        tot_behavior_trials, tot_passive_trials)
+
+    msg2 = ""
+    for k, v in trial_types_counter.most_common():
+        msg2 += "\t○ {:s}: {:d}{:s}\n".format(k, int(np.rint(v / tot_behavior_trials * 100)), '%')
+    msg2 += "\n- percent frequencies used (behavior):\n"
+
+    msg3 = ""
+    for k, v in behavior_frequencies_counter.most_common():
+        msg3 += "\t○ {:d} Hz: {:d}{:s}\n".format(k, int(np.ceil(v / tot_behavior_trials * 100)), '%')
+    msg3 += "\n- percent frequencies used (passive):\n"
+
+    msg4 = ""
+    for k, v in passive_frequencies_counter.most_common():
+        msg4 += "\t○ {:d} Hz: {:d}{:s}\n".format(k, int(np.ceil(v / tot_passive_trials * 100)), '%')
+    msg4 += "\n- percent stim levels used (behavior):\n"
+
+    msg5 = ""
+    for k, v in behavior_stimlevel_counter.most_common():
+        msg5 += "\t○ {:d} dB: {:d}{:s}\n".format(k, int(np.ceil(v / tot_behavior_trials * 100)), '%')
+    msg5 += "\n- percent stim levels used (passive):\n"
+
+    msg6 = ""
+    for k, v in passive_stimlevel_counter.most_common():
+        msg6 += "\t○ {:d} dB: {:d}{:s}\n".format(k, int(np.ceil(v / tot_passive_trials * 100)), '%')
+    msg6 += '-' * 45
+
+    msg = msg1 + msg2 + msg3 + msg4 + msg5 + msg6
+
+    print(msg)
+
+    if save_file is not None:
+        save_dir = os.path.dirname(save_file)
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except FileNotFoundError:
+            pass
+
+        with open(save_file, 'w') as file:
+            file.write(msg + '\n\n\n\n')
+
+            msg = "*** Behavior (detailed) ***\n\n"
+            file.write(msg)
+            file.write(t_behavior_detailed.get_string())
+
+            msg = "\n\n\n\n*** Passive (detailed) ***\n\n"
+            file.write(msg)
+            file.write(t_passive_detailed.get_string())
 
 
 def create_df(load_file, save_file=None, normalize=False):
