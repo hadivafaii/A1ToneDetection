@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
@@ -316,3 +317,129 @@ def mk_saliency_gridscatter(df, mode="importances", save_file=None, display=True
         plt.close(fig)
 
     return fig, ax_arr
+
+
+def mk_saliency_hist(df, mode="importances", save_file=None, display=True, figsize=(20, 16)):
+    _allowed_modes = ["importances", "coeffs"]
+    if mode not in _allowed_modes:
+        raise RuntimeError("invalid mode entered.  allowed options: {}".format(_allowed_modes))
+
+    names = list(df.name.unique())
+    tasks = list(df.task.unique())
+    nb_seeds = len(df.seed.unique())
+
+    # crealte df to plot
+    cols = ['task', 'num_nonzero', 'percent_nonzero']
+    df_to_plot = pd.DataFrame(columns=cols)
+
+    for task in tqdm(tasks):
+        for name in names:
+            selected_df = df.loc[(df.name == name) & (df.task == task)]
+            nc = len(selected_df.cell_indx.unique())
+            if nc == 0:
+                continue
+            z = selected_df[mode].to_numpy()
+            try:
+                z = z.reshape(nb_seeds, nc)
+            except ValueError:
+                print('some seeds were not accepted, name = {:s}, task = {:s}, moving on . . .'.format(name, task))
+                continue
+            num_nonzeros = (z != 0).sum(-1)
+
+            assert not sum(num_nonzeros > nc), "num nonzero neurons must be less than total num cells"
+
+            data_dict = {
+                'task': [task] * nb_seeds,
+                'num_nonzero': num_nonzeros,
+                'percent_nonzero': num_nonzeros / nc * 100,
+            }
+            df_to_plot = df_to_plot.append(pd.DataFrame(data=data_dict))
+
+    df_to_plot = df_to_plot.reset_index(drop=True)
+    df_to_plot = df_to_plot.apply(pd.to_numeric, downcast="integer", errors="ignore")
+
+    nrows, ncols = 4, 4
+    assert nrows * ncols >= 2 * len(tasks)
+
+    sns.set_style('whitegrid')
+    fig, ax_arr = plt.subplots(nrows, ncols, figsize=figsize, sharey='all')
+
+    tick_spacing1 = 5
+    nb_ticks1 = int(np.ceil(max(df_to_plot.num_nonzero.to_numpy()) / tick_spacing1))
+    xticks1 = range(0, nb_ticks1 * tick_spacing1 + 1, tick_spacing1)
+
+    tick_spacing2 = 10
+    xticks2 = range(0, 100 + 1, tick_spacing2)
+
+    for idx, task in enumerate(tasks):
+        i, j = idx // 4, idx % 4
+
+        x = df_to_plot.loc[(df_to_plot.task == task)]
+        mean = x.num_nonzero.mean()
+        ax_arr[i, j].axvline(
+            x=mean,
+            label='mean ~ {:d}'.format(int(np.rint(mean))),
+            color='navy',
+            linestyle='dashed',
+            linewidth=1,
+        )
+        sns.histplot(
+            data=x,
+            x="num_nonzero",
+            color=COLORS[idx],
+            bins=10,
+            element='poly',
+            kde=True,
+            label=task,
+            ax=ax_arr[i, j],
+        )
+        ax_arr[i, j].set_xticks(xticks1)
+        ax_arr[i, j].legend(loc='upper right')
+
+        mean = x.percent_nonzero.mean()
+        ax_arr[i + 2, j].axvline(
+            x=mean,
+            label='mean ~ {:.1f} {:s}'.format(mean, '%'),
+            color='darkred',
+            linestyle='dashed',
+            linewidth=1,
+        )
+        sns.histplot(
+            data=x,
+            x="percent_nonzero",
+            color=COLORS[idx],
+            bins=10,
+            element='poly',
+            kde=True,
+            label=task,
+            ax=ax_arr[i + 2, j],
+        )
+        ax_arr[i + 2, j].set_xticks(xticks2)
+        ax_arr[i + 2, j].legend(loc='upper right')
+
+    fig.delaxes(ax_arr[-3, -1])
+    fig.delaxes(ax_arr[-1, -1])
+
+    fig.subplots_adjust(hspace=0.4)
+
+    msg = "Hitogram plot of:\n\
+    1) num nonzero classifier '{:s}' (top two rows) and\n\
+    2) percent nonzero '{:s}' (bottom two rows)\n\
+    Dashed lines correspond to averages in each case. Obtained using {:d} different seeds."
+    msg = msg.format(mode, mode, nb_seeds)
+    sup = fig.suptitle(msg, y=1.0, fontsize=20)
+
+    if save_file is not None:
+        save_dir = os.path.dirname(save_file)
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except FileNotFoundError:
+            pass
+        fig.savefig(save_file, dpi=100, bbox_inches='tight', bbox_extra_artists=[sup])
+
+    if display:
+        plt.show(fig)
+    else:
+        plt.close(fig)
+
+    return fig, ax_arr, df_to_plot

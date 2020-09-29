@@ -39,6 +39,7 @@ def run_classification_analysis(
         'tol': 1e-4,
         'class_weight': 'balanced',
         'solver': 'liblinear',
+        'max_iter': 100,
         'n_jobs': None,
     }
     for k in classifier_args:
@@ -143,6 +144,7 @@ def run_classification_analysis(
                                 solver=classifier_args['solver'],
                                 class_weight=classifier_args['class_weight'],
                                 n_jobs=classifier_args['n_jobs'],
+                                max_iter=classifier_args['max_iter'],
                                 random_state=random_state,
                             ).fit(x_trn, y_trn)
                         elif classifier_args['type'] == 'svm':
@@ -206,6 +208,7 @@ def run_classification_analysis(
                             solver=classifier_args['solver'],
                             class_weight=classifier_args['class_weight'],
                             n_jobs=classifier_args['n_jobs'],
+                            max_iter=classifier_args['max_iter'],
                             random_state=random_state,
                         ).fit(x_trn, y_trn)
                     elif classifier_args['type'] == 'svm':

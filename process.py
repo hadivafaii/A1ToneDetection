@@ -119,7 +119,7 @@ def summarize_data(load_file, save_file=None):
     msg1 += '-' * 45
     msg1 += "\n- num experiments: {:d},\n- num animals: {:d},\n- num good cells: {:d},\
     \n- num behavior trials {:d},\n- num passive trials {:d},\
-    \n\n- percent different trials:\n"
+    \n\n- num/percent different trials:\n"
 
     msg1 = msg1.format(
         tot_expts, len(list(np.unique(animal_names_all))), tot_good_cells,
@@ -127,7 +127,7 @@ def summarize_data(load_file, save_file=None):
 
     msg2 = ""
     for k, v in trial_types_counter.most_common():
-        msg2 += "\t○ {:s}: {:d}{:s}\n".format(k, int(np.rint(v / tot_behavior_trials * 100)), '%')
+        msg2 += "\t○ {:s}: {:d} ({:d}{:s})\n".format(k, v, int(np.rint(v / tot_behavior_trials * 100)), '%')
     msg2 += "\n- percent frequencies used (behavior):\n"
 
     msg3 = ""
@@ -226,7 +226,7 @@ def create_df(load_file, save_file=None, normalize=False):
             data_all = data_all.append(pd.DataFrame(data=data_dict))
     f.close()
 
-    data_all = data_all.reset_index()
+    data_all = data_all.reset_index(drop=True)
     data_all = data_all.apply(pd.to_numeric, downcast="integer", errors="ignore")
     if save_file is not None:
         data_all.to_pickle(save_file)
