@@ -2,22 +2,25 @@ import os
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
 from matplotlib.lines import Line2D
+from matplotlib.patches import FancyBboxPatch, BoxStyle
+from matplotlib.collections import PatchCollection
+from matplotlib.backends.backend_pdf import FigureCanvasPdf, PdfPages
 import matplotlib.pyplot as plt
 import seaborn as sns
-sns.set_style('white')
-
+from analysis.analysis import reset_df
 
 COLORS = list(sns.color_palette())
 COLORMAPS = ["Blues", "Oranges", "Greens", "Reds", "Purples",
              "YlOrBr", "PuRd", "Greys", "YlGn", "GnBu"]
 
 
-def mk_saliency_boxplots(df, criterion, save_file=None, display=True, figsize=(30, 8)):
+def mk_boxplots(df, criterion, save_file=None, display=True, figsize=(30, 8), dpi=100):
     tasks = list(df.task.unique())
 
     sns.set_style('white')
-    fig, ax_arr = plt.subplots(1, 3, figsize=figsize, sharey=False)
+    fig, ax_arr = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
 
     _ = ax_arr[0].axvspan(30, 60, facecolor='lightgrey', alpha=0.5, zorder=0)
     sns.boxplot(
@@ -91,23 +94,11 @@ def mk_saliency_boxplots(df, criterion, save_file=None, display=True, figsize=(3
     msg = msg.format(criterion, len(df.seed.unique()))
     sup = fig.suptitle(msg, y=1.1, fontsize=25)
 
-    if save_file is not None:
-        save_dir = os.path.dirname(save_file)
-        try:
-            os.makedirs(save_dir, exist_ok=True)
-        except FileNotFoundError:
-            pass
-        fig.savefig(save_file, dpi=100, bbox_inches='tight', bbox_extra_artists=[sup])
-
-    if display:
-        plt.show(fig)
-    else:
-        plt.close(fig)
-
+    _save_fig(fig, sup, save_file, display)
     return fig, ax_arr
 
 
-def mk_saliency_gridplot(df, mode="importances", save_file=None, display=True, figsize=(96, 16)):
+def mk_gridplot(df, mode="importances", save_file=None, display=True, figsize=(96, 16), dpi=200):
     _allowed_modes = ["importances", "coeffs"]
     if mode not in _allowed_modes:
         raise RuntimeError("invalid mode entered.  allowed options: {}".format(_allowed_modes))
@@ -116,7 +107,7 @@ def mk_saliency_gridplot(df, mode="importances", save_file=None, display=True, f
     tasks = list(df.task.unique())
 
     sns.set_style('whitegrid')
-    fig, ax_arr = plt.subplots(len(tasks), len(names), figsize=figsize, sharex='col', sharey='row')
+    fig, ax_arr = plt.subplots(len(tasks), len(names), figsize=figsize, dpi=dpi, sharex='col', sharey='row')
 
     for i, task in tqdm(enumerate(tasks), total=len(tasks)):
         for j, name in enumerate(names):
@@ -152,27 +143,15 @@ def mk_saliency_gridplot(df, mode="importances", save_file=None, display=True, f
     msg = msg.format(mode, len(df.seed.unique()))
     sup = fig.suptitle(msg, y=1.0, fontsize=20)
 
-    if save_file is not None:
-        save_dir = os.path.dirname(save_file)
-        try:
-            os.makedirs(save_dir, exist_ok=True)
-        except FileNotFoundError:
-            pass
-        fig.savefig(save_file, dpi=200, bbox_inches='tight', bbox_extra_artists=[sup])
-
-    if display:
-        plt.show(fig)
-    else:
-        plt.close(fig)
-
+    _save_fig(fig, sup, save_file, display)
     return fig, ax_arr
 
 
-def mk_saliency_gridhist(df, save_file=None, display=True, figsize=(25, 20)):
+def mk_gridhist(df, save_file=None, display=True, figsize=(25, 20), dpi=200):
     tasks = list(df.task.unique())
 
     sns.set_style('whitegrid')
-    fig, ax_arr = plt.subplots(len(tasks), len(tasks), figsize=figsize, sharex='all', sharey='row')
+    fig, ax_arr = plt.subplots(len(tasks), len(tasks), figsize=figsize, dpi=dpi, sharex='all', sharey='row')
 
     for i, task1 in enumerate(tasks):
         for j, task2 in enumerate(tasks):
@@ -216,23 +195,11 @@ def mk_saliency_gridhist(df, save_file=None, display=True, figsize=(25, 20)):
     msg = msg.format(len(df.seed.unique()))
     sup = fig.suptitle(msg, y=0.97, fontsize=20)
 
-    if save_file is not None:
-        save_dir = os.path.dirname(save_file)
-        try:
-            os.makedirs(save_dir, exist_ok=True)
-        except FileNotFoundError:
-            pass
-        fig.savefig(save_file, dpi=200, bbox_inches='tight', bbox_extra_artists=[sup])
-
-    if display:
-        plt.show(fig)
-    else:
-        plt.close(fig)
-
+    _save_fig(fig, sup, save_file, display)
     return fig, ax_arr
 
 
-def mk_saliency_gridscatter(df, mode="importances", save_file=None, display=True, figsize=(140, 20)):
+def mk_gridscatter(df, mode="importances", save_file=None, display=True, figsize=(140, 20), dpi=300):
     _allowed_modes = ["importances", "coeffs"]
     if mode not in _allowed_modes:
         raise RuntimeError("invalid mode entered.  allowed options: {}".format(_allowed_modes))
@@ -241,7 +208,7 @@ def mk_saliency_gridscatter(df, mode="importances", save_file=None, display=True
     tasks = list(df.task.unique())
 
     sns.set_style('white')
-    fig, ax_arr = plt.subplots(len(tasks), len(names), figsize=figsize, sharex='col', sharey='row')
+    fig, ax_arr = plt.subplots(len(tasks), len(names), figsize=figsize, dpi=dpi, sharex='col', sharey='row')
 
     for j, name in enumerate(names):
         selected_df = df.loc[df.name == name]
@@ -303,23 +270,11 @@ def mk_saliency_gridscatter(df, mode="importances", save_file=None, display=True
     msg = msg.format(mode, len(df.seed.unique()))
     sup = fig.suptitle(msg, y=1.0, fontsize=25)
 
-    if save_file is not None:
-        save_dir = os.path.dirname(save_file)
-        try:
-            os.makedirs(save_dir, exist_ok=True)
-        except FileNotFoundError:
-            pass
-        fig.savefig(save_file, dpi=300, bbox_inches='tight', bbox_extra_artists=[sup])
-
-    if display:
-        plt.show(fig)
-    else:
-        plt.close(fig)
-
+    _save_fig(fig, sup, save_file, display)
     return fig, ax_arr
 
 
-def mk_saliency_hist(df, mode="importances", save_file=None, display=True, figsize=(20, 16)):
+def mk_hist(df, mode="importances", save_file=None, display=True, figsize=(20, 16), dpi=200):
     _allowed_modes = ["importances", "coeffs"]
     if mode not in _allowed_modes:
         raise RuntimeError("invalid mode entered.  allowed options: {}".format(_allowed_modes))
@@ -342,7 +297,7 @@ def mk_saliency_hist(df, mode="importances", save_file=None, display=True, figsi
             try:
                 z = z.reshape(nb_seeds, nc)
             except ValueError:
-                print('some seeds were not accepted, name = {:s}, task = {:s}, moving on . . .'.format(name, task))
+                print('missing data, name = {:s}, task = {:s}, moving on . . .'.format(name, task))
                 continue
             num_nonzeros = (z != 0).sum(-1)
 
@@ -355,14 +310,13 @@ def mk_saliency_hist(df, mode="importances", save_file=None, display=True, figsi
             }
             df_to_plot = df_to_plot.append(pd.DataFrame(data=data_dict))
 
-    df_to_plot = df_to_plot.reset_index(drop=True)
-    df_to_plot = df_to_plot.apply(pd.to_numeric, downcast="integer", errors="ignore")
+    df_to_plot = reset_df(df_to_plot)
 
     nrows, ncols = 4, 4
     assert nrows * ncols >= 2 * len(tasks)
 
     sns.set_style('whitegrid')
-    fig, ax_arr = plt.subplots(nrows, ncols, figsize=figsize, sharey='all')
+    fig, ax_arr = plt.subplots(nrows, ncols, figsize=figsize, dpi=dpi, sharey='all')
 
     tick_spacing1 = 5
     nb_ticks1 = int(np.ceil(max(df_to_plot.num_nonzero.to_numpy()) / tick_spacing1))
@@ -372,7 +326,7 @@ def mk_saliency_hist(df, mode="importances", save_file=None, display=True, figsi
     xticks2 = range(0, 100 + 1, tick_spacing2)
 
     for idx, task in enumerate(tasks):
-        i, j = idx // 4, idx % 4
+        i, j = idx // nrows, idx % nrows
 
         x = df_to_plot.loc[(df_to_plot.task == task)]
         mean = x.num_nonzero.mean()
@@ -429,17 +383,254 @@ def mk_saliency_hist(df, mode="importances", save_file=None, display=True, figsi
     msg = msg.format(mode, mode, nb_seeds)
     sup = fig.suptitle(msg, y=1.0, fontsize=20)
 
+    _save_fig(fig, sup, save_file, display)
+    return fig, ax_arr, df_to_plot
+
+
+def process_df_mk_bestreg_gridplot(df, save_file=None, display=True, figsize=(400, 30), dpi=100):
+    cols = list(list(df.columns) + ['best_t'])
+    df_processed = pd.DataFrame(columns=cols)
+
+    names = list(df.name.unique())
+    tasks = list(df.task.unique())
+    reg_cs = list(df.reg_C.unique())
+
+    nb_c = len(reg_cs)
+    nb_seeds = len(df.seed.unique())
+    nt = len(df.timepoint.unique())
+
+    sns.set_style('white')
+    fig, ax_arr = plt.subplots(len(tasks), len(names), figsize=figsize, dpi=dpi, sharex='all', sharey='all')
+
+    for i, task in tqdm(enumerate(tasks), total=len(tasks)):
+        for j, name in enumerate(names):
+            # select best reg
+            selected_df = df.loc[(df.name == name) & (df.task == task)]
+            scores = selected_df.score.to_numpy()
+            if not len(scores):
+                print('missing data, name = {:s}, task = {:s}, moving on . . .'.format(name, task))
+                continue
+            else:
+                scores = scores.reshape(nb_seeds, nb_c, 3, nt)
+            mean_scores = scores.mean(2).mean(0)
+            max_score = np.max(mean_scores)
+
+            if np.sum(mean_scores == max_score) == 1:
+                a, b = np.unravel_index(np.argmax(mean_scores), mean_scores.shape)
+            else:
+                only_max_scores = mean_scores.copy()
+                only_max_scores[mean_scores < max_score] = 0
+
+                a = max(np.where(only_max_scores)[0])
+                b = np.argmax(only_max_scores[a])
+
+            assert mean_scores[a, b] == np.max(mean_scores), "must select max score"
+
+            # mk plot
+            im = ax_arr[i, j].imshow(
+                X=mean_scores,
+                aspect=nt/nb_c/2.5,
+                cmap='hot',
+            )
+            plt.colorbar(im, ax=ax_arr[i, j])
+            ax_arr[i, j].set_yticks(range(nb_c))
+            ax_arr[i, j].set_yticklabels(reg_cs)
+
+            rx = FancyBboxPatch(
+                xy=(0, a),
+                width=nt,
+                height=0,
+                boxstyle=BoxStyle("Round", pad=figsize[1]/nb_c/len(tasks) * 0.5),
+            )
+            ry = FancyBboxPatch(
+                xy=(b, 0),
+                width=0,
+                height=nb_c,
+                boxstyle=BoxStyle("Round", pad=figsize[0]/nt/len(names) * 5),
+            )
+            r = [rx, ry]
+
+            pc = PatchCollection(r, edgecolor='dodgerblue', facecolors='None')
+            ax_arr[i, j].add_collection(pc)
+
+            if j == 0:
+                ax_arr[i, j].set_ylabel(task, fontsize=12, rotation=75)
+            else:
+                ax_arr[i, j].set_ylabel('')
+
+            if i == 0:
+                ax_arr[i, j].set_title(name, fontsize=15, rotation=0)
+
+            # save df
+            num = nb_seeds * 3 * nt
+            assert num == len(selected_df) // nb_c, "otherwise something wrong"
+
+            _seeds = selected_df.seed.to_numpy()
+            _seeds = _seeds.reshape(nb_seeds, nb_c, 3, nt)
+            _seeds = _seeds[:, a, ...]
+
+            _timepoints = selected_df.timepoint.to_numpy()
+            _timepoints = _timepoints.reshape(nb_seeds, nb_c, 3, nt)
+            _timepoints = _timepoints[:, a, ...]
+
+            _metric = selected_df.metric.to_numpy()
+            _metric = _metric.reshape(nb_seeds, nb_c, 3, nt)
+            _metric = _metric[:, a, ...]
+
+            # save processed df
+            data_dict = {
+                'name': [name] * num,
+                'seed': _seeds.flatten(),
+                'task': [task] * num,
+                'reg_C': [reg_cs[a]] * num,
+                'timepoint': _timepoints.flatten(),
+                'metric': _metric.flatten(),
+                'score': scores[:, a, ...].flatten(),
+                'best_t': [b] * num,
+            }
+            df_processed = df_processed.append(pd.DataFrame(data=data_dict))
+
+    df_processed = reset_df(df_processed)
+
+    msg = "Detecting best regularization hyperparam / time point for each task / experiment,\
+        X-axis is time, Y-axis is reg values used in grid search: {},\
+        blue boxes indicate selected reg/time pair"
+    msg = msg.format(reg_cs)
+    sup = fig.suptitle(msg, y=1.0, fontsize=40)
+
+    _save_fig(fig, sup, save_file, display)
+    return fig, ax_arr, df_processed
+
+
+def mk_performance_plot(df, save_file=None, display=True, figsize=(22, 8), dpi=100):
+    tasks = list(df.task.unique())
+
+    sns.set_style('whitegrid')
+    fig, ax_arr = plt.subplots(2, 4, figsize=figsize, dpi=dpi, sharey='all', sharex='all')
+
+    for idx, task in enumerate(tasks):
+        j, i = idx // 2, idx % 2
+        selected_df = df.loc[df.task == task]
+        sns.lineplot(x="timepoint", y="score", data=selected_df, hue='metric', ax=ax_arr[i, j])
+        ax_arr[i, j].axvspan(30, 60, facecolor='lightgrey', alpha=0.5)
+        ax_arr[i, j].set_title("{:s}".format(task, fontsize=15))
+        if idx > 0:
+            ax_arr[i, j].get_legend().remove()
+
+    fig.delaxes(ax_arr[-1, -1])
+
+    msg = "Average classification performance for different tasks at different time points"
+    sup = fig.suptitle(msg, y=1.0, fontsize=20)
+
+    _save_fig(fig, sup, save_file, display)
+    return fig, ax_arr
+
+
+def mk_reg_viz(df_processed, df_stats, save_file=None, display=True, figsize=(20, 8), dpi=200):
+    sns.set_style('white')
+    f = plt.figure(figsize=figsize, dpi=dpi)
+    sns.countplot(x="reg_C", hue="task", data=df_processed, dodge=True)
+
+    msg = "Distribution of best regularization hyperparameter for different tasks\n\
+    X axis is inverse regularization strength (i.e. smaller is stronger)"
+    sup = f.suptitle(msg, y=1.0, fontsize=20)
+
+    msg1 = "X: best score vs Y: precent nonzero joint distribution.\
+    this figure shows for perfect predictions (i.e. score = 1) results are sparser"
+    f1, sup1 = _mk_jointplot(df_stats, 'best_score', 'percent_nonzero', sup_msg=msg1, dpi=dpi)
+
+    msg2 = "X: (inverse) regulirization strength vs Y: precent nonzero joint distribution.\
+    this figure is a sanity check: stronger regularization should lead to sparser results"
+    f2, sup2 = _mk_jointplot(df_stats, 'reg_C', 'percent_nonzero', sup_msg=msg2, dpi=dpi)
+
+    figs = [f, f1, f2]
+    sups = [sup, sup1, sup2]
+    _save_fig(figs, sups, save_file, display, multi=True)
+    return figs
+
+
+def _mk_jointplot(df, x, y, sup_msg='', sup_x=None, position_kws=None,
+                  kind='hex', ratio=4, figsize=(30, 10), dpi=100):
+    tasks = list(df.task.unique())
+    joint_grids = ()
+    for idx, task in enumerate(tasks):
+        selected_df = df.loc[df.task == task]
+        joint_grids += (
+            sns.jointplot(
+                x=x,
+                y=y,
+                data=selected_df,
+                kind=kind,
+                ratio=ratio,
+                color=COLORS[idx],
+                marginal_kws={'kde': True}),
+        )
+        plt.close()
+
+    if position_kws is None:
+        left = 0.1
+        bottom = 0.1
+        width_large = 0.3
+        height_large = 0.3
+        width_small = 0.1
+        height_small = 0.15
+    else:
+        left = position_kws['left']
+        bottom = position_kws['bottom']
+        width_large = position_kws['width_large']
+        height_large = position_kws['height_large']
+        width_small = position_kws['width_small']
+        height_small = position_kws['height_small']
+
+    f = plt.figure(figsize=figsize, dpi=dpi)
+    for jg in joint_grids:
+        for a in jg.fig.axes:
+            # noinspection PyProtectedMember
+            f._axstack.add(f._make_key(a), a)
+
+    for idx, task in enumerate(tasks):
+        f.axes[idx * 3 + 1].set_title(task)
+
+        f.axes[idx * 3 + 0].set_position([left, bottom, width_large, height_large])
+        f.axes[idx * 3 + 1].set_position([left, height_large + bottom, width_large, height_small])
+        f.axes[idx * 3 + 2].set_position([left + width_large, bottom, width_small, height_large])
+
+        if sup_x is None and idx == len(tasks) // 2:
+            sup_x = left / 5 + width_large / 10
+
+        left += width_large + 2.5 * width_small
+
+    sup_y = height_large + height_small
+    sup = f.suptitle(sup_msg, y=sup_y, x=sup_x, fontsize=20)
+    plt.close(f)
+    return f, sup
+
+
+def _save_fig(fig, sup, save_file, display, multi=False):
     if save_file is not None:
         save_dir = os.path.dirname(save_file)
         try:
             os.makedirs(save_dir, exist_ok=True)
         except FileNotFoundError:
             pass
-        fig.savefig(save_file, dpi=100, bbox_inches='tight', bbox_extra_artists=[sup])
+        if not multi:
+            fig.savefig(save_file, dpi=fig.dpi, bbox_inches='tight', bbox_extra_artists=[sup])
+        else:
+            assert len(fig) == len(sup) > 1, "must provide a list of mroe than 1 figures for multi figure saving"
+            with PdfPages(save_file) as pages:
+                for f, s in zip(fig, sup):
+                    canvas = FigureCanvasPdf(f)
+                    canvas.print_figure(pages, dpi=f.dpi, bbox_inches='tight', bbox_extra_artists=[s])
 
     if display:
-        plt.show(fig)
+        if isinstance(fig, list):
+            for f in fig:
+                plt.show(f)
+        else:
+            plt.show(fig)
     else:
-        plt.close(fig)
-
-    return fig, ax_arr, df_to_plot
+        if isinstance(fig, list):
+            for f in fig:
+                plt.close(f)
+        else:
+            plt.close(fig)

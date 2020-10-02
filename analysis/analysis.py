@@ -14,7 +14,38 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import matthews_corrcoef, balanced_accuracy_score, accuracy_score, f1_score, make_scorer
 
 
-# TODO: add the actual time analysis here too (it's just adding another dataframe)
+def filter_stats_df(df_stats, df_processed):
+    names = list(df_processed.name.unique())
+    tasks = list(df_processed.task.unique())
+
+    df_stats_filtered = pd.DataFrame(columns=df_stats.columns)
+    for name in names:
+        for task in tasks:
+            # get selected c
+            df = df_processed.loc[(df_processed.name == name) & (df_processed.task == task)]
+            _c = df.reg_C.unique()
+            if len(_c) != 1:
+                print('missing data, name = {:s}, task = {:s}, moving on . . .'.format(name, task))
+                continue
+            else:
+                selected_c = _c[0]
+
+            # selec corresponding df and append
+            selected_df = df_stats.loc[
+                (df_stats.name == name) &
+                (df_stats.task == task) &
+                (df_stats.reg_C == selected_c)]
+            df_stats_filtered = df_stats_filtered.append(selected_df)
+
+    return reset_df(df_stats_filtered)
+
+
+def reset_df(df):
+    df = df.reset_index(drop=True)
+    df = df.apply(pd.to_numeric, downcast="integer", errors="ignore")
+    return df
+
+
 def run_classification_analysis(
         load_file: str,
         tasks: List[str] = None,
@@ -299,12 +330,9 @@ def run_classification_analysis(
                         msg = msg.format(expt, random_state, reg_c, task)
                         logger.warning(msg)
 
-    df_stats = df_stats.reset_index(drop=True)
-    df_stats = df_stats.apply(pd.to_numeric, downcast="integer", errors="ignore")
-    df_results_concise = df_results_concise.reset_index(drop=True)
-    df_results_concise = df_results_concise.apply(pd.to_numeric, downcast="integer", errors="ignore")
-    df_results_extensive = df_results_extensive.reset_index(drop=True)
-    df_results_extensive = df_results_extensive.apply(pd.to_numeric, downcast="integer", errors="ignore")
+    df_stats = reset_df(df_stats)
+    df_results_concise = reset_df(df_results_concise)
+    df_results_extensive = reset_df(df_results_extensive)
 
     if save_results_dir is not None:
         save_dir = pjoin(save_results_dir, classifier_args['clf_type'])
