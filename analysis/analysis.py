@@ -1,59 +1,32 @@
 import os
 import h5py
 import random
+import logging
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from typing import List, Dict
+from copy import deepcopy
+from typing import List, Tuple, Dict
 from datetime import datetime
 from os.path import join as pjoin
 
 from sklearn.svm import LinearSVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.inspection import permutation_importance
-from sklearn.metrics import matthews_corrcoef, balanced_accuracy_score, accuracy_score, f1_score, make_scorer
-
-
-def filter_stats_df(df_stats, df_processed):
-    names = list(df_processed.name.unique())
-    tasks = list(df_processed.task.unique())
-
-    df_stats_filtered = pd.DataFrame(columns=df_stats.columns)
-    for name in names:
-        for task in tasks:
-            # get selected c
-            df = df_processed.loc[(df_processed.name == name) & (df_processed.task == task)]
-            _c = df.reg_C.unique()
-            if len(_c) != 1:
-                print('missing data, name = {:s}, task = {:s}, moving on . . .'.format(name, task))
-                continue
-            else:
-                selected_c = _c[0]
-
-            # selec corresponding df and append
-            selected_df = df_stats.loc[
-                (df_stats.name == name) &
-                (df_stats.task == task) &
-                (df_stats.reg_C == selected_c)]
-            df_stats_filtered = df_stats_filtered.append(selected_df)
-
-    return reset_df(df_stats_filtered)
-
-
-def reset_df(df):
-    df = df.reset_index(drop=True)
-    df = df.apply(pd.to_numeric, downcast="integer", errors="ignore")
-    return df
+from sklearn.metrics import matthews_corrcoef, accuracy_score, f1_score, make_scorer
 
 
 def run_classification_analysis(
         load_file: str,
         tasks: List[str] = None,
         seeds: List[int] = 42,
-        criterion: str = 'mcc',
         save_results_dir: str = None,
-        **kwargs: Dict[str, str],
-):
+        **kwargs: Dict[str, str],) -> Tuple[pd.DataFrame]:
+
+    _allowed_clf_types = ['logreg', 'svm']
+
+    if not isinstance(seeds, list):
+        seeds = [seeds]
 
     if tasks is None:
         tasks = [
@@ -75,48 +48,34 @@ def run_classification_analysis(
         if k in kwargs:
             classifier_args[k] = kwargs[k]
 
-    _allowed_clf_types = ['logreg', 'svm']
-    score_fn = _get_score_fn(criterion)
+    base_cols = ['name', 'seed', 'task', 'reg_C', 'timepoint']
 
-    if not isinstance(seeds, list):
-        seeds = [seeds]
+    cols = base_cols + ['cell_indx', 'coeffs', 'x', 'y']
+    df_coeffs = pd.DataFrame(columns=cols)
 
-    cols = [
-        'name', 'seed', 'task', 'reg_C',
-        'coeffs', 'coeffs_normalized', 'coeffs_normalized_abs',
-        'max_abs_val', 'percent_nonzero', 'best_score', 'best_timepoint',
-    ]
-    df_stats = pd.DataFrame(columns=cols)
-    cols = [
-        'name', 'seed', 'task', 'reg_C',
-        'cell_indx', 'coeffs', 'importances',
-        'x_coordinates', 'y_coordinates',
-    ]
-    df_results_concise = pd.DataFrame(columns=cols)
-    cols = [
-        'name', 'seed', 'task', 'reg_C',
-        'timepoint', 'metric', 'score',
-    ]
-    df_results_extensive = pd.DataFrame(columns=cols)
+    cols = base_cols + ['metric', 'score']
+    df_performances = pd.DataFrame(columns=cols)
 
     xv_fold = 5
-    msg = "[INFO] running analysis using: '{}' criterion, {:d}-fold xv, {:d} different seeds.\n\
-    [INFO] classifier options: {}"
-    msg = msg.format(criterion, xv_fold, len(seeds), classifier_args)
+    msg = "[INFO] running analysis using: {:d}-fold xv, {:d} different seeds.\n[INFO] classifier options: {}"
+    msg = msg.format(xv_fold, len(seeds), classifier_args)
     print(msg)
 
     logger = _setup_logger(classifier_args['clf_type'])
 
     h5_file = h5py.File(load_file, "r")
     pbar = tqdm(h5_file)
+    clf_dict = {}
     for expt in pbar:
+        if "rodger" not in expt:
+            continue
         behavior = h5_file[expt]["behavior"]
         trial_info_grp = behavior["trial_info"]
 
         good_cells = np.array(behavior["good_cells"], dtype=int)
         xy = np.array(behavior["xy"], dtype=float)[good_cells]
         dff = np.array(behavior["dff"], dtype=float)[..., good_cells]
-        nt, nb_trials, nc = dff.shape
+        nt, _, nc = dff.shape
 
         trial_info = {}
         for k, v in trial_info_grp.items():
@@ -166,15 +125,10 @@ def run_classification_analysis(
 
                     x = dff[:, include_trials, :]
 
-                    chosen_timepoint = 0
-                    chosen_performance = - np.inf
-                    chosen_coeffs = np.zeros(nc)
-                    chosen_confidence = 0
-                    accepted = False
-
                     mcc_all = np.zeros(nt)
                     accuracy_all = np.zeros(nt)
                     f1_all = np.zeros(nt)
+                    confidence_all = np.zeros(nt)
 
                     for time_point in range(nt):
                         x_trn, x_vld = x[time_point][trn_indxs], x[time_point][vld_indxs]
@@ -207,6 +161,8 @@ def run_classification_analysis(
                                 msg = msg.format(classifier_args['clf_type'], _allowed_clf_types)
                                 raise ValueError(msg)
                             y_pred = clf.predict(x_vld)
+                            k = "{}^{}^{}^{}^{}".format(expt, task, random_state, reg_c, time_point)
+                            clf_dict[k] = (clf, x_vld, y_vld)
                         except ValueError:
                             msg = 'num trials too small, name = {:s}, seed = {:d}, C = {}, task = {}'
                             msg = msg.format(expt, random_state, reg_c, task)
@@ -217,168 +173,244 @@ def run_classification_analysis(
                         accuracy_all[time_point] = accuracy_score(y_vld, y_pred)
                         f1_all[time_point] = f1_score(y_vld, y_pred)
 
-                        current_performance = score_fn(y_vld, y_pred)
-                        _confidence = clf.decision_function(x_vld)
-                        current_confidence = sum(abs(_confidence[y_vld == y_pred]))
-
-                        _cond = False
-                        if current_performance > chosen_performance:
-                            _cond = True
-                        elif current_performance == chosen_performance:
-                            if current_confidence > chosen_confidence:
-                                _cond = True
-
-                        if _cond:
-                            chosen_performance = current_performance
-                            chosen_confidence = current_confidence
-                            chosen_timepoint = time_point
-                            chosen_coeffs = clf.coef_.copy().flatten()
-                            accepted = True
-
-                    data_dict = {
-                        'name': [expt] * 3 * nt,
-                        'seed': [random_state] * 3 * nt,
-                        'task': [task] * 3 * nt,
-                        'reg_C': [reg_c] * 3 * nt,
-                        'timepoint': np.tile(range(nt), 3),
-                        'metric': ['mcc'] * nt + ['accuracy'] * nt + ['f1'] * nt,
-                        'score': np.concatenate([mcc_all, accuracy_all, f1_all]),
-                    }
-                    df_results_extensive = df_results_extensive.append(pd.DataFrame(data=data_dict))
-
-                    if accepted:
-                        nonzero_coeffs = chosen_coeffs[chosen_coeffs != 0]
-                        nb_nonzero = len(nonzero_coeffs)
-                        if nb_nonzero == 0:
-                            msg = 'all coeffs zero, name = {:s}, seed = {:d}, C = {}, task = {}'
-                            msg = msg.format(expt, random_state, reg_c, task)
-                            logger.warning(msg)
-                            continue
-                        max_abs_val = max(nonzero_coeffs, key=abs)
-                        nonzero_coeffs_normalized = nonzero_coeffs / abs(max_abs_val)
-
-                        data_dict = {
-                            'name': [expt] * nb_nonzero,
-                            'seed': [random_state] * nb_nonzero,
-                            'task': [task] * nb_nonzero,
-                            'reg_C': [reg_c] * nb_nonzero,
-                            'coeffs': nonzero_coeffs,
-                            'coeffs_normalized': nonzero_coeffs_normalized,
-                            'coeffs_normalized_abs': abs(nonzero_coeffs_normalized),
-                            'max_abs_val': [max_abs_val] * nb_nonzero,
-                            'percent_nonzero': [np.round(nb_nonzero / nc * 100, decimals=1)] * nb_nonzero,
-                            'best_score': [chosen_performance] * nb_nonzero,
-                            'best_timepoint': [chosen_timepoint] * nb_nonzero,
-                        }
-                        df_stats = df_stats.append(pd.DataFrame(data=data_dict))
-
-                        # get importance results
-                        x_trn, x_vld = x[chosen_timepoint][trn_indxs], x[chosen_timepoint][vld_indxs]
-                        y_trn, y_vld = pos[trn_indxs], pos[vld_indxs]
-
-                        if classifier_args['clf_type'] == 'logreg':
-                            clf = LogisticRegression(
-                                penalty=classifier_args['penalty'],
-                                C=reg_c,
-                                tol=classifier_args['tol'],
-                                solver=classifier_args['solver'],
-                                class_weight=classifier_args['class_weight'],
-                                n_jobs=classifier_args['n_jobs'],
-                                max_iter=classifier_args['max_iter'],
-                                random_state=random_state,
-                            ).fit(x_trn, y_trn)
-                        elif classifier_args['clf_type'] == 'svm':
-                            clf = LinearSVC(
-                                penalty=classifier_args['penalty'],
-                                C=reg_c,
-                                tol=classifier_args['tol'],
-                                class_weight=classifier_args['class_weight'],
-                                dual=False,
-                                max_iter=classifier_args['max_iter'],
-                                random_state=random_state,
-                            ).fit(x_trn, y_trn)
-                        else:
-                            msg = "invalid classifier type encountered: {:s}, valid options are: {}"
-                            msg = msg.format(classifier_args['clf_type'], _allowed_clf_types)
-                            raise ValueError(msg)
-
-                        importance_result = permutation_importance(
-                            estimator=clf,
-                            X=x_vld,
-                            y=y_vld,
-                            n_repeats=100,
-                            n_jobs=-1,
-                            scoring=make_scorer(score_fn),
-                            random_state=random_state,
-                        )
+                        confidence = clf.decision_function(x_vld)
+                        confidence_all[time_point] = sum(abs(confidence[y_vld == y_pred]))
 
                         data_dict = {
                             'name': [expt] * nc,
                             'seed': [random_state] * nc,
                             'task': [task] * nc,
                             'reg_C': [reg_c] * nc,
+                            'timepoint': [time_point] * nc,
                             'cell_indx': range(nc),
-                            'coeffs': chosen_coeffs,
-                            'importances': importance_result['importances_mean'],
-                            'x_coordinates': xy[:, 0],
-                            'y_coordinates': xy[:, 1],
+                            'coeffs': clf.coef_.squeeze(),
+                            'x': xy[:, 0],
+                            'y': xy[:, 1],
                         }
-                        df_results_concise = df_results_concise.append(pd.DataFrame(data=data_dict))
+                        df_coeffs = df_coeffs.append(pd.DataFrame(data=data_dict))
 
-                    else:
-                        msg = 'no time points were accepted, name = {:s}, seed = {:d}, C = {}, task = {}'
-                        msg = msg.format(expt, random_state, reg_c, task)
-                        logger.warning(msg)
+                    data_dict = {
+                        'name': [expt] * nt * 4,
+                        'seed': [random_state] * nt * 4,
+                        'task': [task] * nt * 4,
+                        'reg_C': [reg_c] * nt * 4,
+                        'timepoint': np.tile(range(nt), 4),
+                        'metric': ['mcc'] * nt + ['accuracy'] * nt + ['f1'] * nt + ['confidence'] * nt,
+                        'score': np.concatenate([mcc_all, accuracy_all, f1_all, confidence_all]),
+                    }
+                    df_performances = df_performances.append(pd.DataFrame(data=data_dict))
 
-    df_stats = reset_df(df_stats)
-    df_results_concise = reset_df(df_results_concise)
-    df_results_extensive = reset_df(df_results_extensive)
+    df_coeffs = reset_df(df_coeffs)
+    df_performances = reset_df(df_performances)
+    output = _porocess_results(df_performances, df_coeffs)
+    df_performances, df_performances_filtered, df_coeffs_filtered = output
+    df_coeffs_filtered = compute_feature_importances(df_coeffs_filtered, clf_dict)
 
     if save_results_dir is not None:
-        save_dir = pjoin(save_results_dir, classifier_args['clf_type'])
-        os.makedirs(save_dir, exist_ok=True)
-
-        name_template = "{:s}{:s}_{:s}.df"
+        name_template = "{:s}{:s}_{:s}"
         name_template = name_template.format(
             classifier_args['penalty'],
             classifier_args['solver'],
             datetime.now().strftime("[%Y_%m_%d_%H:%M]"),
         )
+        save_dir = pjoin(save_results_dir, classifier_args['clf_type'], name_template)
+        os.makedirs(save_dir, exist_ok=True)
 
-        file_name = "stats_" + name_template
-        df_stats.to_pickle(pjoin(save_dir, file_name))
+        file_name = "coeffs_" + name_template + '.df'
+        df_coeffs.to_pickle(pjoin(save_dir, file_name))
         print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, save_dir))
 
-        file_name = "concise_" + name_template
-        df_results_concise.to_pickle(pjoin(save_dir, file_name))
+        file_name = "coeffs_filtered_" + name_template + '.df'
+        df_coeffs_filtered.to_pickle(pjoin(save_dir, file_name))
         print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, save_dir))
 
-        file_name = "extensive_" + name_template
-        df_results_extensive.to_pickle(pjoin(save_dir, file_name))
+        file_name = "performances_" + name_template + '.df'
+        df_performances.to_pickle(pjoin(save_dir, file_name))
+        print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, save_dir))
+
+        file_name = "performances_filtered_" + name_template + '.df'
+        df_performances_filtered.to_pickle(pjoin(save_dir, file_name))
+        print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, save_dir))
+
+        file_name = "classifiers_" + name_template + '.npy'
+        np.save(pjoin(save_dir, file_name), clf_dict)
         print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, save_dir))
 
     h5_file.close()
-    return df_stats, df_results_concise, df_results_extensive
+    return df_coeffs, df_coeffs_filtered, df_performances, df_performances_filtered
 
 
-def _get_score_fn(option: str):
-    return {
-        'accuracy': accuracy_score,
-        'balanced_accuracy': balanced_accuracy_score,
-        'f1': f1_score,
-        'mcc': matthews_corrcoef,
-    }[option]
+def compute_feature_importances(df: pd.DataFrame, classifiers: dict) -> pd.DataFrame:
+    print('[PROGRESS] computing feature importances')
+
+    empty_df = pd.DataFrame(columns=['importances'], index=df.index)
+    new_df = pd.concat([df, empty_df], axis=1)
+
+    for k, (clf, x_vld, y_vld) in classifiers.items():
+        name, task, random_state, reg_c, time_point = k.split('^')
+        random_state, time_point = int(random_state), int(time_point)
+        reg_c = float(reg_c)
+
+        cond = (new_df.name == name) & \
+               (new_df.task == task) & \
+               (new_df.seed == random_state)
+
+        _c = new_df.loc[cond, 'reg_C'].unique()
+        _t = new_df.loc[cond, 'timepoint'].unique()
+        assert len(_c) == len(_t) == 1, "filtered df must have only one unique selected timepoint or reg per expt/task"
+
+        if not (_c[0] == reg_c and _t[0] == time_point):
+            continue
+
+        importance_result = permutation_importance(
+            estimator=clf,
+            X=x_vld,
+            y=y_vld,
+            n_repeats=100,
+            n_jobs=-1,
+            scoring=make_scorer(matthews_corrcoef),
+            random_state=random_state,
+        )
+
+        new_df.loc[cond, 'importances'] = pd.Series(
+            importance_result['importances_mean'], index=new_df.loc[cond].index)
+
+    return reset_df(new_df)
 
 
-def _setup_logger(msg):
-    import logging
+def reset_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.reset_index(drop=True)
+    df = df.apply(pd.to_numeric, downcast="integer", errors="ignore")
+    return df
 
+
+def _porocess_results(df_performances: pd.DataFrame, df_coeffs: pd.DataFrame) -> tuple:
+    output = ()
+    df_performances = _normalize_confidence_score(df_performances)
+    df_performances = _detect_best_reg_timepoint(df_performances)
+    output += (df_performances,)
+    filtered_dfs = _filter_df([df_performances, df_coeffs], df_performances)
+    output += tuple(filtered_dfs)
+    return output
+
+
+def _filter_df(dfs: List[pd.DataFrame], augmented_df: pd.DataFrame) -> List[pd.DataFrame]:
+    filtered_dfs = []
+    for df in dfs:
+        filtered_df = deepcopy(df)
+
+        if 'best_reg' in filtered_df.columns:
+            print('[PROGRESS] filtering df_performances using best reg / timepoints')
+            cond = (filtered_df.reg_C != augmented_df.best_reg) | \
+                   (filtered_df.timepoint != augmented_df.best_timepoint)
+            filtered_df.drop(filtered_df.loc[cond].index, inplace=True)
+
+        else:
+            print('[PROGRESS] filtering df_coeffs using best reg / timepoints')
+            names = list(df.name.unique())
+            tasks = list(df.task.unique())
+
+            for task in tasks:
+                for name in names:
+                    selected_df = augmented_df.loc[(augmented_df.name == name) & (augmented_df.task == task)]
+                    best_reg = selected_df.best_reg.unique()[0]
+                    best_timepoint = selected_df.best_timepoint.unique()[0]
+
+                    cond = (filtered_df.name == name) & \
+                           (filtered_df.task == task) & \
+                           ((filtered_df.reg_C != best_reg) | (filtered_df.timepoint != best_timepoint))
+                    filtered_df.drop(filtered_df.loc[cond].index, inplace=True)
+
+        filtered_dfs.append(reset_df(filtered_df))
+
+    return filtered_dfs
+
+
+def _detect_best_reg_timepoint(df: pd.DataFrame) -> pd.DataFrame:
+    empty_df = pd.DataFrame(columns=['best_reg', 'best_timepoint'], index=df.index)
+    new_df = pd.concat([df, empty_df], axis=1)
+
+    names = list(df.name.unique())
+    tasks = list(df.task.unique())
+    reg_cs = list(df.reg_C.unique())
+
+    nb_c = len(reg_cs)
+    nb_seeds = len(df.seed.unique())
+    nt = len(df.timepoint.unique())
+
+    print('[PROGRESS] detecting best reg / timepoints for df_performances')
+
+    for i, task in tqdm(enumerate(tasks), total=len(tasks)):
+        for j, name in enumerate(names):
+            # select best reg
+            cond = (df.name == name) & (df.task == task)
+            selected_df = df.loc[cond]
+            if not len(selected_df):
+                print('missing data, name = {:s}, task = {:s}, moving on . . .'.format(name, task))
+                continue
+
+            scores = selected_df.loc[selected_df.metric.isin(['mcc', 'accuracy', 'f1']), 'score'].to_numpy()
+            scores = scores.reshape(nb_seeds, nb_c, 3, nt)
+            mean_scores = scores.mean(2).mean(0)
+
+            confidences = selected_df.loc[selected_df.metric == 'confidence', 'score'].to_numpy()
+            confidences = confidences.reshape(nb_seeds, nb_c, nt)
+            mean_confidences = confidences.mean(0)
+
+            max_score = np.max(mean_scores)
+
+            if np.sum(mean_scores == max_score) == 1:
+                a, b = np.unravel_index(np.argmax(mean_scores), mean_scores.shape)
+            else:
+                only_max_scores = mean_scores.copy()
+                only_max_scores[mean_scores < max_score] = 0
+
+                a = max(np.where(only_max_scores)[0])
+                max_confidences = mean_confidences * (mean_scores == max_score)
+                b = np.argmax(max_confidences[a])
+
+            assert mean_scores[a, b] == np.max(mean_scores), "must select max score"
+
+            new_df.loc[cond, 'best_reg'] = pd.Series([reg_cs[a]] * len(selected_df), index=selected_df.index)
+            new_df.loc[cond, 'best_timepoint'] = pd.Series([b] * len(selected_df), index=selected_df.index)
+
+    return reset_df(new_df)
+
+
+def _normalize_confidence_score(df: pd.DataFrame) -> pd.DataFrame:
+    names = list(df.name.unique())
+    tasks = list(df.task.unique())
+    reg_cs = list(df.reg_C.unique())
+
+    print('[PROGRESS] normalizing confidence scores for df_performance')
+
+    for name in names:
+        for task in tasks:
+            for reg_c in reg_cs:
+                cond = (df.name == name) & \
+                       (df.task == task) & \
+                       (df.reg_C == reg_c) & \
+                       (df.metric == 'confidence')
+                selected_df = df.loc[cond]
+
+                confidence_scores = selected_df.score
+                max_confidence = max(confidence_scores)
+                df.loc[cond, 'score'] = confidence_scores / max_confidence
+
+    return df
+
+
+def _setup_logger(msg: str) -> logging.Logger:
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
 
-    logger_name = "./{:s}_{:s}.log".format(msg, datetime.now().strftime("[%Y_%m_%d_%H:%M]"))
+    _dir = './log'
+    os.makedirs(_dir, exist_ok=True)
+
+    _file = "{:s}_{:s}.log".format(msg, datetime.now().strftime("[%Y_%m_%d_%H:%M]"))
+    logger_name = pjoin(_dir, _file)
     file_handler = logging.FileHandler(logger_name)
-    print("[INFO] logger '{:s}' created".format(logger_name))
+    print("[PROGRESS] logger '{:s}' created".format(logger_name))
 
     formatter = logging.Formatter('%(asctime)s : %(levelname)s : %(name)s : %(message)s')
     file_handler.setFormatter(formatter)

@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import h5py
 import pickle
+from typing import List, Tuple
 from pathlib import Path
 from scipy.stats import zscore
 from tqdm import tqdm
@@ -14,7 +15,7 @@ import seaborn as sns
 sns.set_style('darkgrid')
 
 
-def summarize_data(load_file, save_file=None):
+def summarize_data(load_file: str, save_file: str = None):
     all_trial_types = [
         'correctreject', 'early', 'earlyfalsealarm', 'earlyhit',
         'falsealarm', 'hit', 'miss', 'target', 'nontarget']
@@ -173,7 +174,7 @@ def summarize_data(load_file, save_file=None):
             file.write(t_passive_detailed.get_string())
 
 
-def create_df(load_file, save_file=None, normalize=False):
+def create_df(load_file: str, save_file: str = None, normalize: bool = False) -> pd.DataFrame:
     f = h5py.File(load_file, 'r')
 
     cols = ["name", "timepoint", "cell_indx", "condition", "dff", "target_licks", "nontarget_licks"]
@@ -234,7 +235,7 @@ def create_df(load_file, save_file=None, normalize=False):
     return data_all
 
 
-def process_data(base_dir, file_name="processed_data.h5", nb_std=3):
+def process_data(base_dir: str, file_name: str = "processed_data.h5", nb_std: int = 1):
     data_dir = pjoin(base_dir, 'Data')
     processed_dir = pjoin(base_dir, 'python_processed')
 
@@ -303,7 +304,7 @@ def process_data(base_dir, file_name="processed_data.h5", nb_std=3):
     h5_file.close()
 
 
-def get_bad_trials(data):
+def get_bad_trials(data: List[dict]) -> List[int]:
     if not isinstance(data, list):
         data = [data]
 
@@ -317,7 +318,7 @@ def get_bad_trials(data):
     return bad_trials
 
 
-def get_good_cells(data, nb_std=5, norm_order=2):
+def get_good_cells(data: List[dict], nb_std: int = 5, norm_order: int = 2) -> List[tuple]:
     if not isinstance(data, list):
         data = [data]
 
@@ -335,7 +336,12 @@ def get_good_cells(data, nb_std=5, norm_order=2):
     return output
 
 
-def plot_outlier_removal(data, nb_std, norm_order=2, save_dir="outlier_removal"):
+def plot_outlier_removal(
+        data: List[dict],
+        nb_std: int,
+        norm_order: int = 2,
+        save_dir: str = "outlier_removal") -> Tuple[int, int]:
+
     good_cells, outlier_indxs, nonnan_bright_indxs = get_good_cells(data, nb_std=nb_std, norm_order=norm_order)[0]
     cells_norm = np.linalg.norm(data[0]['dff'], axis=0, ord=2).mean(0)
 
