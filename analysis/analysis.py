@@ -4,7 +4,7 @@ import random
 import logging
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 from copy import deepcopy
 from typing import List, Tuple, Dict
 from datetime import datetime
@@ -64,11 +64,9 @@ def run_classification_analysis(
     logger = _setup_logger(classifier_args['clf_type'])
 
     h5_file = h5py.File(load_file, "r")
-    pbar = tqdm(h5_file)
+    pbar = tqdm(h5_file, ncols='100%')
     clf_dict = {}
     for expt in pbar:
-        if "rodger" not in expt:
-            continue
         behavior = h5_file[expt]["behavior"]
         trial_info_grp = behavior["trial_info"]
 
@@ -81,12 +79,12 @@ def run_classification_analysis(
         for k, v in trial_info_grp.items():
             trial_info[k] = np.array(v, dtype=int)
 
-        for random_state in seeds:
+        for random_state in tqdm(seeds, leave=False):
             random.seed(random_state)
             np.random.seed(random_state)
 
-            for reg_c in classifier_args['C']:
-                for task in tasks:
+            for reg_c in tqdm(classifier_args['C'], leave=False):
+                for task in tqdm(tasks, leave=False):
                     try:
                         pos_lbl, neg_lbl = task.split('/')
                         pos = trial_info[pos_lbl]
@@ -130,7 +128,7 @@ def run_classification_analysis(
                     f1_all = np.zeros(nt)
                     confidence_all = np.zeros(nt)
 
-                    for time_point in range(nt):
+                    for time_point in tqdm(range(nt), leave=False):
                         x_trn, x_vld = x[time_point][trn_indxs], x[time_point][vld_indxs]
                         y_trn, y_vld = pos[trn_indxs], pos[vld_indxs]
 
@@ -188,6 +186,10 @@ def run_classification_analysis(
                             'y': xy[:, 1],
                         }
                         df_coeffs = df_coeffs.append(pd.DataFrame(data=data_dict))
+
+                        msg = "{}, {}, {}, {}, {}"
+                        msg = msg.format(expt, random_state, reg_c, task, time_point)
+                        pbar.set_description(msg)
 
                     data_dict = {
                         'name': [expt] * nt * 4,
@@ -313,6 +315,9 @@ def _filter_df(dfs: List[pd.DataFrame], augmented_df: pd.DataFrame) -> List[pd.D
             for task in tasks:
                 for name in names:
                     selected_df = augmented_df.loc[(augmented_df.name == name) & (augmented_df.task == task)]
+                    if not len(selected_df):
+                        continue
+
                     best_reg = selected_df.best_reg.unique()[0]
                     best_timepoint = selected_df.best_timepoint.unique()[0]
 
@@ -346,7 +351,6 @@ def _detect_best_reg_timepoint(df: pd.DataFrame) -> pd.DataFrame:
             cond = (df.name == name) & (df.task == task)
             selected_df = df.loc[cond]
             if not len(selected_df):
-                print('missing data, name = {:s}, task = {:s}, moving on . . .'.format(name, task))
                 continue
 
             scores = selected_df.loc[selected_df.metric.isin(['mcc', 'accuracy', 'f1']), 'score'].to_numpy()
@@ -392,6 +396,9 @@ def _normalize_confidence_score(df: pd.DataFrame) -> pd.DataFrame:
                        (df.reg_C == reg_c) & \
                        (df.metric == 'confidence')
                 selected_df = df.loc[cond]
+
+                if not len(selected_df):
+                    continue
 
                 confidence_scores = selected_df.score
                 max_confidence = max(confidence_scores)
