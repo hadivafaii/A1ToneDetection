@@ -196,6 +196,9 @@ def run_classification_analysis(
                         confidence = clf.decision_function(x_vld)
                         confidence_all[time_point] = sum(abs(confidence[y_vld == y_pred]))
 
+                        coeffs = clf.coef_.squeeze()
+                        nb_nonzero = sum(coeffs != 0.0)
+
                         data_dict = {
                             'name': [expt] * nc,
                             'seed': [random_state] * nc,
@@ -203,7 +206,9 @@ def run_classification_analysis(
                             'reg_C': [reg_c] * nc,
                             'timepoint': [time_point] * nc,
                             'cell_indx': range(nc),
-                            'coeffs': clf.coef_.squeeze(),
+                            'coeffs': coeffs,
+                            'nb_nonzero': [nb_nonzero] * nc,
+                            'percent_nonzero': [nb_nonzero / nc * 100] * nc,
                             'x': xy[:, 0],
                             'y': xy[:, 1],
                         }
@@ -272,42 +277,34 @@ def run_classification_analysis(
 
 
 def combine_results(run_dir: str, verbose: bool = True) -> Tuple[pd.DataFrame]:
+    # for memory limitations, first do dfs
     df_coeffs = pd.DataFrame()
     df_performances = pd.DataFrame()
-    clf_dict = {}
-
     runs = sorted(os.listdir(run_dir))
-    for x in tqdm(runs, '[PROGRESS] combining previous fits together', disable=not verbose):
+    for x in tqdm(runs, '[PROGRESS] combining previous fits together (dfs)', disable=not verbose):
         load_dir = pjoin(run_dir, x)
+        files = ['_coeffs.df', '_performances.df', '_classifiers.npy']
+        listdir = os.listdir(load_dir)
+        cond = set(files).issubset(set(listdir))
+
+        if not cond:
+            metadata = np.load(pjoin(load_dir, 'fit_metadata.npy'), allow_pickle=True).item()
+            _combine_fits(metadata, verbose)
+
         _coeffs = pd.read_pickle(pjoin(load_dir, '_coeffs.df'))
         _performances = pd.read_pickle(pjoin(load_dir, '_performances.df'))
-        _classifiers = np.load(pjoin(load_dir, '_classifiers.npy'), allow_pickle=True).item()
-
-        assert not set(_classifiers.keys()).intersection(set(clf_dict.keys())),\
-            "must have non-overlapping keys by design"
 
         df_coeffs = df_coeffs.append(_coeffs)
         df_performances = df_performances.append(_performances)
-        clf_dict.update(_classifiers)
 
-        # reg_cs = list(map(lambda s: float(s), filter(None, x.split(','))))
-
-    df_coeffs = reset_df(df_coeffs)
-    df_performances = reset_df(df_performances)
-
-    output = _porocess_results(df_performances, df_coeffs, verbose)
-    df_performances, df_performances_filtered, df_coeffs_filtered = output
-    df_coeffs_filtered = _compute_feature_importances(df_coeffs_filtered, clf_dict)
+    df_performances, df_performances_filtered, df_coeffs_filtered = _porocess_results(
+        reset_df(df_performances), reset_df(df_coeffs), verbose)
 
     # save
     time_now = now()
     file_name = "coeffs_{:s}.df".format(time_now)
-    df_coeffs.to_pickle(pjoin(run_dir, file_name))
-    if verbose:
-        print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, run_dir))
 
-    file_name = "coeffs_filtered_{:s}.df".format(time_now)
-    df_coeffs_filtered.to_pickle(pjoin(run_dir, file_name))
+    df_coeffs.to_pickle(pjoin(run_dir, file_name))
     if verbose:
         print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, run_dir))
 
@@ -321,12 +318,39 @@ def combine_results(run_dir: str, verbose: bool = True) -> Tuple[pd.DataFrame]:
     if verbose:
         print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, run_dir))
 
+    del df_coeffs, df_performances, df_performances_filtered
+
+    # clfs
+    clf_dict = {}
+    for x in tqdm(runs, '[PROGRESS] combining previous fits together (clfs)', disable=not verbose):
+        load_dir = pjoin(run_dir, x)
+        files = ['_coeffs.df', '_performances.df', '_classifiers.npy']
+        listdir = os.listdir(load_dir)
+        cond = set(files).issubset(set(listdir))
+
+        if not cond:
+            metadata = np.load(pjoin(load_dir, 'fit_metadata.npy'), allow_pickle=True).item()
+            _combine_fits(metadata, verbose)
+
+        _classifiers = np.load(pjoin(load_dir, '_classifiers.npy'), allow_pickle=True).item()
+
+        assert not set(_classifiers.keys()).intersection(set(clf_dict.keys())),\
+            "must have non-overlapping keys by design"
+
+        clf_dict.update(_classifiers)
+
+    df_coeffs_filtered = _compute_feature_importances(df_coeffs_filtered, clf_dict)
+
+    # save
     file_name = "classifiers_{:s}.df".format(time_now)
     np.save(pjoin(run_dir, file_name), clf_dict)
     if verbose:
         print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, run_dir))
 
-    return df_coeffs, df_coeffs_filtered, df_performances, df_performances_filtered
+    file_name = "coeffs_filtered_{:s}.df".format(time_now)
+    df_coeffs_filtered.to_pickle(pjoin(run_dir, file_name))
+    if verbose:
+        print("[PROGRESS] '{:s}' saved at {:s}".format(file_name, run_dir))
 
 
 def _combine_fits(fit_metadata: Dict[str, str], verbose: bool = True):

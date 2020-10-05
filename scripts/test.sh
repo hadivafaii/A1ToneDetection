@@ -5,8 +5,12 @@ min_mem=60
 
 if (($available_mem < $min_mem)); then
   echo hi
+  sleep 4s
+  echo hihi
 else
   echo bye
+  sleep 10s
+  echo byebye
 fi
 
 echo $available_mem
