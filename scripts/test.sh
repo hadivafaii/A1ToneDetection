@@ -1,14 +1,13 @@
 #!/bin/bash
 
-while IFS= read -r line; do
-    echo "Text read from file: $line"
-done < my_filename.txt
+available_mem=$(awk '/MemFree/ { printf "%d \n", $2/1024/1024 }' /proc/meminfo)
+min_mem=60
 
+if (($available_mem < $min_mem)); then
+  echo hi
+else
+  echo bye
+fi
 
-cd ../analysis
-$search_dir = ./
-
-for entry in "$search_dir"/*
-do
-  echo "$entry"
-done
+echo $available_mem
+echo $min_mem

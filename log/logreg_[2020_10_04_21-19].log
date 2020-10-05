@@ -1,0 +1,168 @@
+2020-10-04 21:25:05,482 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.001, task = hit/falsealarm
+2020-10-04 21:25:06,041 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.001, task = miss/falsealarm
+2020-10-04 21:25:06,041 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.001, task = correctreject/falsealarm
+2020-10-04 21:25:06,209 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.0001, task = hit/falsealarm
+2020-10-04 21:25:06,751 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.0001, task = miss/falsealarm
+2020-10-04 21:25:06,751 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.0001, task = correctreject/falsealarm
+2020-10-04 21:25:06,820 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.003, task = hit/falsealarm
+2020-10-04 21:25:07,329 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.003, task = miss/falsealarm
+2020-10-04 21:25:07,329 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.003, task = correctreject/falsealarm
+2020-10-04 21:25:09,081 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.01, task = hit/falsealarm
+2020-10-04 21:25:09,641 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.01, task = miss/falsealarm
+2020-10-04 21:25:09,641 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.01, task = correctreject/falsealarm
+2020-10-04 21:25:12,610 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.0005, task = hit/falsealarm
+2020-10-04 21:25:12,945 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.007, task = hit/falsealarm
+2020-10-04 21:25:13,153 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.0005, task = miss/falsealarm
+2020-10-04 21:25:13,153 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.0005, task = correctreject/falsealarm
+2020-10-04 21:25:13,473 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.007, task = miss/falsealarm
+2020-10-04 21:25:13,474 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.007, task = correctreject/falsealarm
+2020-10-04 21:25:14,172 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.005, task = hit/falsealarm
+2020-10-04 21:25:14,535 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.03, task = hit/falsealarm
+2020-10-04 21:25:14,685 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.005, task = miss/falsealarm
+2020-10-04 21:25:14,685 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.005, task = correctreject/falsealarm
+2020-10-04 21:25:15,087 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.03, task = miss/falsealarm
+2020-10-04 21:25:15,087 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.03, task = correctreject/falsealarm
+2020-10-04 21:25:20,100 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.02, task = hit/falsealarm
+2020-10-04 21:25:20,703 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.02, task = miss/falsealarm
+2020-10-04 21:25:20,703 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.02, task = correctreject/falsealarm
+2020-10-04 21:25:24,604 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.05, task = hit/falsealarm
+2020-10-04 21:25:25,146 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.05, task = miss/falsealarm
+2020-10-04 21:25:25,146 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.05, task = correctreject/falsealarm
+2020-10-04 21:25:32,869 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.07, task = hit/falsealarm
+2020-10-04 21:25:33,825 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.07, task = miss/falsealarm
+2020-10-04 21:25:33,826 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.07, task = correctreject/falsealarm
+2020-10-04 21:26:23,298 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 1.0, task = hit/falsealarm
+2020-10-04 21:26:23,937 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 1.0, task = miss/falsealarm
+2020-10-04 21:26:23,939 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 1.0, task = correctreject/falsealarm
+2020-10-04 21:26:42,650 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.001, task = hit/miss
+2020-10-04 21:26:43,045 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.0001, task = hit/miss
+2020-10-04 21:26:43,434 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.003, task = hit/miss
+2020-10-04 21:26:43,742 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.001, task = miss/correctreject
+2020-10-04 21:26:43,743 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.001, task = miss/falsealarm
+2020-10-04 21:26:44,108 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.0001, task = miss/correctreject
+2020-10-04 21:26:44,109 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.0001, task = miss/falsealarm
+2020-10-04 21:26:44,414 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.003, task = miss/correctreject
+2020-10-04 21:26:44,416 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.003, task = miss/falsealarm
+2020-10-04 21:26:45,648 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.01, task = hit/miss
+2020-10-04 21:26:46,654 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.01, task = miss/correctreject
+2020-10-04 21:26:46,655 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.01, task = miss/falsealarm
+2020-10-04 21:26:49,219 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.007, task = hit/miss
+2020-10-04 21:26:49,738 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.0005, task = hit/miss
+2020-10-04 21:26:50,240 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 5.0, task = hit/falsealarm
+2020-10-04 21:26:50,260 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.007, task = miss/correctreject
+2020-10-04 21:26:50,260 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.007, task = miss/falsealarm
+2020-10-04 21:26:50,719 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.0005, task = miss/correctreject
+2020-10-04 21:26:50,719 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.0005, task = miss/falsealarm
+2020-10-04 21:26:50,733 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.005, task = hit/miss
+2020-10-04 21:26:50,735 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 5.0, task = miss/falsealarm
+2020-10-04 21:26:50,736 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 5.0, task = correctreject/falsealarm
+2020-10-04 21:26:51,475 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.03, task = hit/miss
+2020-10-04 21:26:51,786 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.005, task = miss/correctreject
+2020-10-04 21:26:51,786 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.005, task = miss/falsealarm
+2020-10-04 21:26:52,488 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.03, task = miss/correctreject
+2020-10-04 21:26:52,488 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.03, task = miss/falsealarm
+2020-10-04 21:26:56,896 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.02, task = hit/miss
+2020-10-04 21:26:57,979 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.02, task = miss/correctreject
+2020-10-04 21:26:57,979 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.02, task = miss/falsealarm
+2020-10-04 21:26:59,603 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 10.0, task = hit/falsealarm
+2020-10-04 21:27:00,046 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.05, task = hit/miss
+2020-10-04 21:27:00,212 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 10.0, task = miss/falsealarm
+2020-10-04 21:27:00,212 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 10.0, task = correctreject/falsealarm
+2020-10-04 21:27:01,083 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.05, task = miss/correctreject
+2020-10-04 21:27:01,084 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.05, task = miss/falsealarm
+2020-10-04 21:27:12,813 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.07, task = hit/miss
+2020-10-04 21:27:13,888 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.07, task = miss/correctreject
+2020-10-04 21:27:13,888 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.07, task = miss/falsealarm
+2020-10-04 21:28:08,206 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 1.0, task = hit/miss
+2020-10-04 21:28:09,352 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 1.0, task = miss/correctreject
+2020-10-04 21:28:09,353 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 1.0, task = miss/falsealarm
+2020-10-04 21:28:37,575 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 5.0, task = hit/miss
+2020-10-04 21:28:38,831 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 5.0, task = miss/correctreject
+2020-10-04 21:28:38,831 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 5.0, task = miss/falsealarm
+2020-10-04 21:28:44,709 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 10.0, task = hit/miss
+2020-10-04 21:28:45,958 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 10.0, task = miss/correctreject
+2020-10-04 21:28:45,958 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 10.0, task = miss/falsealarm
+2020-10-04 21:31:37,686 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0001, task = hit/miss
+2020-10-04 21:31:37,686 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0001, task = hit/correctreject
+2020-10-04 21:31:37,686 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0001, task = hit/falsealarm
+2020-10-04 21:31:37,686 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0001, task = miss/correctreject
+2020-10-04 21:31:37,686 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0001, task = miss/falsealarm
+2020-10-04 21:31:37,686 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0001, task = correctreject/falsealarm
+2020-10-04 21:31:37,686 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0001, task = target/nontarget
+2020-10-04 21:31:39,427 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.003, task = hit/miss
+2020-10-04 21:31:39,427 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.003, task = hit/correctreject
+2020-10-04 21:31:39,427 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.003, task = hit/falsealarm
+2020-10-04 21:31:39,427 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.003, task = miss/correctreject
+2020-10-04 21:31:39,427 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.003, task = miss/falsealarm
+2020-10-04 21:31:39,427 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.003, task = correctreject/falsealarm
+2020-10-04 21:31:39,427 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.003, task = target/nontarget
+2020-10-04 21:31:40,203 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.001, task = hit/miss
+2020-10-04 21:31:40,204 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.001, task = hit/correctreject
+2020-10-04 21:31:40,204 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.001, task = hit/falsealarm
+2020-10-04 21:31:40,204 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.001, task = miss/correctreject
+2020-10-04 21:31:40,204 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.001, task = miss/falsealarm
+2020-10-04 21:31:40,204 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.001, task = correctreject/falsealarm
+2020-10-04 21:31:40,204 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.001, task = target/nontarget
+2020-10-04 21:31:40,731 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0005, task = hit/miss
+2020-10-04 21:31:40,731 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0005, task = hit/correctreject
+2020-10-04 21:31:40,731 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0005, task = hit/falsealarm
+2020-10-04 21:31:40,731 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0005, task = miss/correctreject
+2020-10-04 21:31:40,731 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0005, task = miss/falsealarm
+2020-10-04 21:31:40,731 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0005, task = correctreject/falsealarm
+2020-10-04 21:31:40,731 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.0005, task = target/nontarget
+2020-10-04 21:31:42,283 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.01, task = hit/miss
+2020-10-04 21:31:42,284 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.01, task = hit/correctreject
+2020-10-04 21:31:42,284 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.01, task = hit/falsealarm
+2020-10-04 21:31:42,284 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.01, task = miss/correctreject
+2020-10-04 21:31:42,284 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.01, task = miss/falsealarm
+2020-10-04 21:31:42,284 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.01, task = correctreject/falsealarm
+2020-10-04 21:31:42,284 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.01, task = target/nontarget
+2020-10-04 21:31:46,937 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.007, task = hit/miss
+2020-10-04 21:31:46,939 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.007, task = hit/correctreject
+2020-10-04 21:31:46,939 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.007, task = hit/falsealarm
+2020-10-04 21:31:46,939 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.007, task = miss/correctreject
+2020-10-04 21:31:46,939 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.007, task = miss/falsealarm
+2020-10-04 21:31:46,939 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.007, task = correctreject/falsealarm
+2020-10-04 21:31:46,939 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.007, task = target/nontarget
+2020-10-04 21:31:50,100 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.005, task = hit/miss
+2020-10-04 21:31:50,100 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.005, task = hit/correctreject
+2020-10-04 21:31:50,100 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.005, task = hit/falsealarm
+2020-10-04 21:31:50,100 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.005, task = miss/correctreject
+2020-10-04 21:31:50,100 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.005, task = miss/falsealarm
+2020-10-04 21:31:50,100 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.005, task = correctreject/falsealarm
+2020-10-04 21:31:50,100 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.005, task = target/nontarget
+2020-10-04 21:32:03,166 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.03, task = hit/miss
+2020-10-04 21:32:03,167 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.03, task = hit/correctreject
+2020-10-04 21:32:03,168 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.03, task = hit/falsealarm
+2020-10-04 21:32:03,168 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.03, task = miss/correctreject
+2020-10-04 21:32:03,168 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.03, task = miss/falsealarm
+2020-10-04 21:32:03,168 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.03, task = correctreject/falsealarm
+2020-10-04 21:32:03,168 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.03, task = target/nontarget
+2020-10-04 21:32:04,571 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.02, task = hit/miss
+2020-10-04 21:32:04,573 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.02, task = hit/correctreject
+2020-10-04 21:32:04,574 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.02, task = hit/falsealarm
+2020-10-04 21:32:04,575 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.02, task = miss/correctreject
+2020-10-04 21:32:04,576 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.02, task = miss/falsealarm
+2020-10-04 21:32:04,577 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.02, task = correctreject/falsealarm
+2020-10-04 21:32:04,578 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.02, task = target/nontarget
+2020-10-04 21:32:14,677 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.05, task = hit/miss
+2020-10-04 21:32:14,677 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.05, task = hit/correctreject
+2020-10-04 21:32:14,677 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.05, task = hit/falsealarm
+2020-10-04 21:32:14,677 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.05, task = miss/correctreject
+2020-10-04 21:32:14,677 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.05, task = miss/falsealarm
+2020-10-04 21:32:14,677 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.05, task = correctreject/falsealarm
+2020-10-04 21:32:14,677 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.05, task = target/nontarget
+2020-10-04 21:32:33,061 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.07, task = hit/miss
+2020-10-04 21:32:33,061 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.07, task = hit/correctreject
+2020-10-04 21:32:33,061 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.07, task = hit/falsealarm
+2020-10-04 21:32:33,061 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.07, task = miss/correctreject
+2020-10-04 21:32:33,061 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.07, task = miss/falsealarm
+2020-10-04 21:32:33,061 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.07, task = correctreject/falsealarm
+2020-10-04 21:32:33,061 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 0.07, task = target/nontarget
+2020-10-04 21:34:13,321 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 1.0, task = hit/miss
+2020-10-04 21:34:13,321 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 1.0, task = hit/correctreject
+2020-10-04 21:34:13,321 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 1.0, task = hit/falsealarm
+2020-10-04 21:34:13,321 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 1.0, task = miss/correctreject
+2020-10-04 21:34:13,321 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 1.0, task = miss/falsealarm
+2020-10-04 21:34:13,321 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 1.0, task = correctreject/falsealarm
+2020-10-04 21:34:13,321 : INFO : __main__ : missing trials, name = ken_2016-09-30, seed = 1, C = 1.0, task = target/nontarget

@@ -15,6 +15,8 @@ from operator import methodcaller
 from typing import List, Tuple, Dict
 from datetime import datetime
 from os.path import join as pjoin
+from pathlib import Path
+import shutil
 
 from sklearn.svm import LinearSVC
 from sklearn.linear_model import LogisticRegression
@@ -61,7 +63,7 @@ def run_classification_analysis(
             classifier_args[k] = kwargs[k]
 
     if verbose:
-        msg = "[INFO] running analysis using: {:d}-fold xv, {:d} different seeds.\n"
+        msg = "\n[INFO] running analysis using: {:d}-fold xv, {:d} different seeds.\n"
         msg += "[INFO] classifier options:\n\t{}\n"
         msg += "[INFO] option save_to_pieces is: {}"
         msg = msg.format(xv_fold, len(seeds), classifier_args, save_to_pieces)
@@ -102,9 +104,10 @@ def run_classification_analysis(
                         pos = trial_info[pos_lbl]
                         neg = trial_info[neg_lbl]
                     except KeyError:
-                        msg = 'missing trials, name = {:s}, seed = {:d}, C = {}, task = {}'
-                        msg = msg.format(expt, random_state, reg_c, task)
-                        logger.info(msg)
+                        if random_state == seeds[0]:
+                            msg = 'missing trials, name = {:s}, seed = {:d}, C = {}, task = {}'
+                            msg = msg.format(expt, random_state, reg_c, task)
+                            logger.info(msg)
                         continue
 
                     include_trials = np.logical_or(pos, neg)
@@ -115,9 +118,10 @@ def run_classification_analysis(
                     nb_neg_samples = sum(neg)
 
                     if nb_pos_samples == 0 or nb_neg_samples == 0:
-                        msg = 'no samples found, name = {:s}, seed = {:d}, C = {}, task = {}'
-                        msg = msg.format(expt, random_state, reg_c, task)
-                        logger.info(msg)
+                        if random_state == seeds[0]:
+                            msg = 'no samples found, name = {:s}, seed = {:d}, C = {}, task = {}'
+                            msg = msg.format(expt, random_state, reg_c, task)
+                            logger.info(msg)
                         continue
 
                     assert np.all(np.array([pos, neg]).T.sum(-1) == 1), \
@@ -209,7 +213,7 @@ def run_classification_analysis(
                         else:
                             coeffs_dict_list.append(data_dict)
 
-                        msg = "name: {},  seed: {},  C: {},  task: {},  t: {}, "
+                        msg = "name: {}, seed: {}, C: {}, task: {}, t: {}, "
                         msg = msg.format(expt, random_state, reg_c, task, time_point)
                         pbar.set_description(msg)
 
@@ -325,7 +329,7 @@ def combine_results(run_dir: str, verbose: bool = True) -> Tuple[pd.DataFrame]:
     return df_coeffs, df_coeffs_filtered, df_performances, df_performances_filtered
 
 
-def combine_fits(fit_metadata: Dict[str, str], verbose: bool = True):
+def _combine_fits(fit_metadata: Dict[str, str], verbose: bool = True):
     files = ['_coeffs.df', '_performances.df', '_classifiers.npy']
     listdir = os.listdir(fit_metadata['save_dir'])
     cond = set(files).issubset(set(listdir))
@@ -381,6 +385,14 @@ def combine_fits(fit_metadata: Dict[str, str], verbose: bool = True):
     else:
         if verbose:
             print('[PROGRESS] skipped combining, files found: {}'.format(files))
+
+    # delete files
+    dirs = [
+        fit_metadata['coeffs_dir'].split('/')[-1],
+        fit_metadata['performances_dir'].split('/')[-1],
+        fit_metadata['classifiers_dir'].split('/')[-1],
+    ]
+    _rm_dirs(fit_metadata['save_dir'], dirs, verbose)
 
 
 def _compute_feature_importances(df: pd.DataFrame, classifiers: dict, verbose: bool = True) -> pd.DataFrame:
@@ -549,6 +561,16 @@ def _merg_dicts(dict_list: List[dict]) -> Dict[str, list]:
     return merged
 
 
+def _rm_dirs(base_dir: str, dirs: List[str], verbose: bool = True):
+    for x in dirs:
+        dirpath = Path(base_dir, x)
+        if dirpath.exists() and dirpath.is_dir():
+            shutil.rmtree(dirpath)
+
+    if verbose:
+        print("[PROGRESS] removed {} folders at {:s}".format(dirs, base_dir))
+
+
 def _mk_save_dirs(cm: str, save_results_dir: str, classifier_args: Dict[str, str], verbose: bool = True):
     c_dir = ""
     for reg_c in classifier_args['C']:
@@ -565,7 +587,7 @@ def _mk_save_dirs(cm: str, save_results_dir: str, classifier_args: Dict[str, str
     os.makedirs(classifiers_dir, exist_ok=True)
 
     if verbose:
-        print("[PROGRESS] creaded save dirs")
+        print("[PROGRESS] creaded save dirs\n")
 
     return save_dir, coeffs_dir, performances_dir, classifiers_dir
 
@@ -722,7 +744,7 @@ def main():
     )
 
     # combine fits together
-    combine_fits(fit_metadata, verbose=args.verbose)
+    _combine_fits(fit_metadata, verbose=args.verbose)
 
 
 if __name__ == "__main__":
