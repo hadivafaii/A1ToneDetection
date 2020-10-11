@@ -10,6 +10,7 @@ from tqdm import tqdm
 from os.path import join as pjoin
 from prettytable import PrettyTable
 from collections import Counter
+from .generic_utils import merge_dicts, save_obj
 import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_style('darkgrid')
@@ -174,12 +175,15 @@ def summarize_data(load_file: str, save_file: str = None):
             file.write(t_passive_detailed.get_string())
 
 
-def create_df(load_file: str, save_file: str = None, normalize: bool = False) -> pd.DataFrame:
+def process_data(
+        load_file: str,
+        save_dir: str,
+        file_name: str,
+        normalize: bool = False,) -> dict:
+
     f = h5py.File(load_file, 'r')
 
-    cols = ["name", "timepoint", "cell_indx", "condition", "dff", "target_licks", "nontarget_licks"]
-    data_all = pd.DataFrame(columns=cols)
-
+    dictdata_list = []
     for name in tqdm(f):
         behavior = f[name]['behavior']
         dff = np.array(behavior['dff'], dtype=float)
@@ -219,30 +223,32 @@ def create_df(load_file: str, save_file: str = None, normalize: bool = False) ->
                 "name": [name] * nt * trial_size * nc,
                 "timepoint": time_points.flatten(),
                 "cell_indx": cell_indxs.flatten(),
-                "condition": [k] * nt * trial_size * nc,
+                "trial": [k] * nt * trial_size * nc,
                 "dff": dff_good[:, trial_data == 1, :].flatten(),
                 "target_licks": target_licks.flatten(),
                 "nontarget_licks": nontarget_licks.flatten(),
             }
-            data_all = data_all.append(pd.DataFrame(data=data_dict))
+            dictdata_list.append(data_dict)
     f.close()
 
-    data_all = data_all.reset_index(drop=True)
-    data_all = data_all.apply(pd.to_numeric, downcast="integer", errors="ignore")
-    if save_file is not None:
-        data_all.to_pickle(save_file)
+    os.makedirs(save_dir, exist_ok=True)
+    save_obj(
+        data=pd.DataFrame.from_dict(merge_dicts(dictdata_list)),
+        file_name=file_name, save_dir=save_dir, mode='df', verbose=True,
+    )
+    del dictdata_list
 
-    return data_all
+    print('[PROGRESS] processing done.\n\n')
 
 
-def process_data(base_dir: str, file_name: str = "processed_data.h5", nb_std: int = 1):
+def organize_data(base_dir: str, file_name: str = "processed_data.h5", nb_std: int = 1):
     data_dir = pjoin(base_dir, 'Data')
     processed_dir = pjoin(base_dir, 'python_processed')
 
     save_file = pjoin(processed_dir, file_name)
     h5_file = h5py.File(save_file, 'w')
 
-    for path in Path(data_dir).rglob('*.pkl'):
+    for path in tqdm(Path(data_dir).rglob('*.pkl')):
         file = str(path)
         data = pickle.load(open(file, "rb"))
         name = "{:s}_{:s}".format(data[0]["name"], data[0]["date"]).lower()
@@ -282,7 +288,22 @@ def process_data(base_dir: str, file_name: str = "processed_data.h5", nb_std: in
             if isinstance(v, (int, np.uint8, np.uint16)):
                 behavior_metadata_grp.create_dataset(k, data=v)
             elif len(v) == n_trials_behavior:
-                behavior_trials_grp.create_dataset(k, data=np.delete(v, bad_trials[0]), dtype=int)
+                trial_data = np.delete(v, bad_trials[0])
+                behavior_trials_grp.create_dataset(k, data=trial_data, dtype=int)
+                if k == 'stimfrequency':
+                    freqs = sorted(np.unique(trial_data))  # [7000, 9899, 14000, 19799]
+                    target7k = np.zeros(len(trial_data))
+                    target10k = np.zeros(len(trial_data))
+                    nontarget14k = np.zeros(len(trial_data))
+                    nontarget20k = np.zeros(len(trial_data))
+                    target7k[np.where(trial_data == freqs[0])[0]] = 1
+                    target10k[np.where(trial_data == freqs[1])[0]] = 1
+                    nontarget14k[np.where(trial_data == freqs[2])[0]] = 1
+                    nontarget20k[np.where(trial_data == freqs[3])[0]] = 1
+                    behavior_trials_grp.create_dataset('target7k', data=target7k, dtype=int)
+                    behavior_trials_grp.create_dataset('target10k', data=target10k, dtype=int)
+                    behavior_trials_grp.create_dataset('nontarget14k', data=nontarget14k, dtype=int)
+                    behavior_trials_grp.create_dataset('nontarget20k', data=nontarget20k, dtype=int)
             else:
                 continue
 

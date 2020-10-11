@@ -9,7 +9,7 @@ from matplotlib.collections import PatchCollection
 from matplotlib.backends.backend_pdf import FigureCanvasPdf, PdfPages
 import matplotlib.pyplot as plt
 import seaborn as sns
-from analysis.analysis import reset_df
+from analysis.clf_analysis import reset_df
 
 COLORS = list(sns.color_palette())
 COLORMAPS = ["Blues", "Oranges", "Greens", "Reds", "Purples",
