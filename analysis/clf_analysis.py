@@ -5,20 +5,17 @@ import random
 import logging
 import argparse
 import numpy as np
-import pandas as pd
 from tqdm import tqdm
-from copy import deepcopy
-from datetime import datetime
+from typing import List, Dict
 from os.path import join as pjoin
-from typing import List, Tuple, Dict
 
 from sklearn.svm import LinearSVC
 from sklearn.linear_model import LogisticRegression
-from sklearn.inspection import permutation_importance
-from sklearn.metrics import matthews_corrcoef, accuracy_score, f1_score, make_scorer
+from sklearn.metrics import matthews_corrcoef, accuracy_score, f1_score
 
 sys.path.append('..')
-from utils.generic_utils import now, reset_df, merge_dicts, rm_dirs, save_obj
+from utils.generic_utils import now, merge_dicts, save_obj
+from .clf_process import combine_fits
 
 
 def run_classification_analysis(
@@ -30,7 +27,7 @@ def run_classification_analysis(
         xv_fold: int = 5,
         save_to_pieces: bool = False,
         verbose: bool = True,
-        **kwargs: Dict[str, str], ) -> Tuple[pd.DataFrame]:
+        **kwargs: Dict[str, str], ) -> dict:
     _allowed_clf_types = ['logreg', 'svm']
 
     if not isinstance(seeds, list):
@@ -270,289 +267,6 @@ def run_classification_analysis(
     return fit_metadata
 
 
-def combine_results(run_dir: str, verbose: bool = True) -> Tuple[pd.DataFrame]:
-    _regs = ['1.0', '0.001', '0.0001']
-
-    coeffs_dictlist = []
-    performances_dictlist = []
-    runs = sorted(os.listdir(run_dir), key=lambda c: float(c), reverse=True)
-    for x in tqdm(runs, '[PROGRESS] combining previous fit data together', disable=not verbose):
-        if x not in _regs:
-            continue
-        load_dir = pjoin(run_dir, x)
-        files = ['_coeffs.npy', '_performances.npy', '_classifiers.npy']
-        listdir = os.listdir(load_dir)
-        cond = set(files).issubset(set(listdir))
-
-        if not cond:
-            metadata = np.load(pjoin(load_dir, 'fit_metadata.npy'), allow_pickle=True).item()
-            _combine_fits(metadata, verbose)
-
-        with open(pjoin(load_dir, '_coeffs.npy'), 'rb') as f:
-            _coeffs = np.load(f, allow_pickle=True).item()
-            coeffs_dictlist.append(_coeffs)
-        with open(pjoin(load_dir, '_performances.npy'), 'rb') as f:
-            _performances = np.load(f, allow_pickle=True).item()
-            performances_dictlist.append(_performances)
-
-    coeffs = merge_dicts(coeffs_dictlist, verbose)
-    performances = merge_dicts(performances_dictlist, verbose)
-
-    performances, performances_filtered, coeffs_filtered = _porocess_results(
-        performances, coeffs, verbose)
-
-    # save
-    time_now = now(exclude_hour_min=True)
-
-    save_obj(
-        data=pd.DataFrame.from_dict(coeffs),
-        file_name="coeffs_{:s}.df".format(time_now),
-        save_dir=run_dir,
-        mode='df',
-        verbose=verbose,
-    )
-    del coeffs
-    save_obj(
-        data=pd.DataFrame.from_dict(performances),
-        file_name="performances_{:s}.df".format(time_now),
-        save_dir=run_dir,
-        mode='df',
-        verbose=verbose,
-    )
-    del performances
-    save_obj(
-        data=pd.DataFrame.from_dict(performances_filtered),
-        file_name="performances_filtered_{:s}.df".format(time_now),
-        save_dir=run_dir,
-        mode='df',
-        verbose=verbose,
-    )
-    del performances_filtered
-
-    # clfs
-    classifiers = {}
-    for x in tqdm(runs, '[PROGRESS] combining previous classifiers together', disable=not verbose):
-        if x not in _regs2:
-            continue
-        load_dir = pjoin(run_dir, x)
-        files = ['_coeffs.npy', '_performances.npy', '_classifiers.npy']
-        listdir = os.listdir(load_dir)
-        cond = set(files).issubset(set(listdir))
-
-        if not cond:
-            metadata = np.load(pjoin(load_dir, 'fit_metadata.npy'), allow_pickle=True).item()
-            _combine_fits(metadata, verbose)
-
-        with open(pjoin(load_dir, '_classifiers.npy'), 'rb') as f:
-            _classifiers = np.load(f, allow_pickle=True).item()
-            assert not set(_classifiers.keys()).intersection(set(classifiers.keys())),\
-                "must have non-overlapping keys by design"
-            classifiers.update(_classifiers)
-
-    coeffs_filtered = _compute_feature_importances(coeffs_filtered, classifiers)
-
-    # save
-    save_obj(
-        data=pd.DataFrame.from_dict(coeffs_filtered),
-        file_name="coeffs_filtered_{:s}.df".format(time_now),
-        save_dir=run_dir,
-        mode='df',
-        verbose=verbose,
-    )
-    del coeffs_filtered
-    save_obj(classifiers, "classifiers_{:s}.pkl".format(time_now), run_dir, 'pkl', verbose)
-    del classifiers
-
-    print("[PROGRESS] combining everything done.\n\n")
-
-
-def _combine_fits(fit_metadata: Dict[str, str], verbose: bool = True):
-    files = ['_coeffs.npy', '_performances.npy', '_classifiers.npy']
-    listdir = os.listdir(fit_metadata['save_dir'])
-    cond = set(files).issubset(set(listdir))
-
-    if not cond:
-        # coeffs
-        _coeffs_dictlist = []
-        dirs = sorted(os.listdir(fit_metadata['coeffs_dir']))
-        for x in tqdm(dirs, '[PROGRESS] combining _coeffs together', disable=not verbose):
-            with open(pjoin(fit_metadata['coeffs_dir'], x), 'rb') as f:
-                data_dict = np.load(f, allow_pickle=True).item()
-                _coeffs_dictlist.append(data_dict)
-        _coeffs = merge_dicts(_coeffs_dictlist, verbose)
-        save_obj(_coeffs, "_coeffs.npy", fit_metadata['save_dir'], 'np', verbose)
-        del _coeffs
-
-        # performances
-        _performances_dictlist = []
-        dirs = sorted(os.listdir(fit_metadata['performances_dir']))
-        for x in tqdm(dirs, '[PROGRESS] combining _performances together', disable=not verbose):
-            with open(pjoin(fit_metadata['performances_dir'], x), 'rb') as f:
-                data_dict = np.load(f, allow_pickle=True).item()
-                _performances_dictlist.append(data_dict)
-        _performances = merge_dicts(_performances_dictlist, verbose)
-        save_obj(_performances, "_performances.npy", fit_metadata['save_dir'], 'np', verbose)
-        del _performances
-
-        # classifiers
-        _classifiers = {}
-        dirs = sorted(os.listdir(fit_metadata['classifiers_dir']))
-        for x in tqdm(dirs, '[PROGRESS] combining _classifiers together', disable=not verbose):
-            with open(pjoin(fit_metadata['classifiers_dir'], x), 'rb') as f:
-                data_dict = np.load(f, allow_pickle=True).item()
-                _classifiers.update(data_dict)
-        save_obj(_classifiers, "_classifiers.npy", fit_metadata['save_dir'], 'np', verbose)
-        del _classifiers
-
-    else:
-        if verbose:
-            print('[PROGRESS] skipped combining, files found: {}'.format(files))
-
-    # delete files
-    listdir = os.listdir(fit_metadata['save_dir'])
-    cond = set(files).issubset(set(listdir))
-    if cond:
-        dirs = [
-            fit_metadata['coeffs_dir'].split('/')[-1],
-            fit_metadata['performances_dir'].split('/')[-1],
-            fit_metadata['classifiers_dir'].split('/')[-1],
-        ]
-        rm_dirs(fit_metadata['save_dir'], dirs, verbose)
-    else:
-        print("[WARNING] some fits were not combined here: {}".format(fit_metadata['save_dir']))
-
-
-def _porocess_results(performances: dict, coeffs: dict, verbose: bool = True) -> tuple:
-    performances = {k: np.array(v) for k, v in performances.items()}
-    coeffs = {k: np.array(v) for k, v in coeffs.items()}
-
-    output = ()
-    performances = _detect_best_reg_timepoint(performances, verbose)
-    output += (performances,)
-    filtered = _filter(performances, coeffs, verbose)
-    output += tuple(filtered)
-    return output
-
-
-def _filter(performances: dict, coeffs: dict, verbose: bool = True) -> Tuple[dict]:
-    # first do performances
-    cond = (performances['reg_C'] == performances['best_reg']) & \
-           (performances['timepoint'] == performances['best_timepoint'])
-    performances_filtered = {k: v[cond] for k, v in performances.items()}
-
-    # do coeffs
-    names = list(np.unique(performances['name']))
-    tasks = list(np.unique(performances['task']))
-
-    matching_indxs = []
-    for task in tqdm(tasks, disable=not verbose, leave=False):
-        for name in names:
-            cond = (performances['name'] == name) & (performances['task'] == task)
-            if not sum(cond):
-                continue
-
-            best_reg = np.unique(performances['best_reg'][cond]).item()
-            best_timepoint = np.unique(performances['best_timepoint'][cond]).item()
-
-            cond = (coeffs['name'] == name) & (coeffs['task'] == task) & \
-                   (coeffs['reg_C'] == best_reg) & (coeffs['timepoint'] == best_timepoint)
-            matching_indxs.extend(cond.nonzero()[0])
-
-    coeffs_filtered = {k: v[matching_indxs] for k, v in coeffs.items()}
-    return performances_filtered, coeffs_filtered
-
-
-def _detect_best_reg_timepoint(performances: dict, verbose: bool = True) -> dict:
-    names = list(np.unique(performances['name']))
-    tasks = list(np.unique(performances['task']))
-    reg_cs = list(np.unique(performances['reg_C']))
-
-    nb_c = len(reg_cs)
-    nb_seeds = len(np.unique(performances['seed']))
-    nt = len(np.unique(performances['timepoint']))
-
-    best_reg = np.array([-1.0] * len(performances['name']))
-    best_timepoint = np.array([-1] * len(performances['name']))
-    for i, task in tqdm(enumerate(tasks), total=len(tasks),
-                        desc='[PROGRESS] detecting best reg/timepoints', disable=not verbose):
-        for j, name in enumerate(names):
-            # select best reg
-            cond = (performances['name'] == name) & (performances['task'] == task)
-            if not sum(cond):
-                continue
-
-            scores_all = np.array(performances['score'])[cond]
-            scores_all = scores_all.reshape(nb_seeds, nb_c, 4, nt)
-
-            scores = scores_all[..., :3, :]
-            confidences = scores_all[..., -1, :]
-
-            mean_scores = scores.mean(2).mean(0)
-            mean_confidences = confidences.mean(0)
-
-            max_score = np.max(mean_scores)
-
-            if np.sum(mean_scores == max_score) == 1:
-                a, b = np.unravel_index(np.argmax(mean_scores), mean_scores.shape)
-            else:
-                only_max_scores = mean_scores.copy()
-                only_max_scores[mean_scores < max_score] = 0
-
-                # a will correspond to smaller C -> larger reg strength
-                a = min(np.unique(np.where(only_max_scores)[0]), key=lambda x: reg_cs[x])
-                max_confidences = mean_confidences * (mean_scores == max_score)
-                b = np.argmax(max_confidences[a])
-
-            assert mean_scores[a, b] == np.max(mean_scores), "must select max score"
-
-            best_reg[cond] = reg_cs[a]
-            best_timepoint[cond] = b
-
-    assert not (best_reg < 0).sum(), "otherwise something wrong"
-    assert not (best_timepoint < 0).sum(), "otherwise something wrong"
-
-    performances['best_reg'] = best_reg
-    performances['best_timepoint'] = best_timepoint
-
-    return performances
-
-
-def _compute_feature_importances(coeffs_filtered: dict, classifiers: dict, verbose: bool = True) -> dict:
-    importances = np.array([-1.0] * len(coeffs_filtered))
-    for k, (clf, x_vld, y_vld) in tqdm(
-            classifiers.items(), desc='[PROGRESS] computing feature importances', disable=not verbose):
-        name, task, random_state, reg_c, time_point = k.split('^')
-        random_state, time_point = int(random_state), int(time_point)
-        reg_c = float(reg_c)
-
-        cond = (coeffs_filtered['name'] == name) & \
-               (coeffs_filtered['task'] == task) & \
-               (coeffs_filtered['seed'] == random_state)
-
-        _c = np.unique(coeffs_filtered['reg_C'][cond])
-        _t = np.unique(coeffs_filtered['timepoint'][cond])
-        assert len(_c) == len(_t) == 1, "filtered df must have only one unique selected timepoint or reg per expt/task"
-
-        if not (_c.item() == reg_c and _t.item() == time_point):
-            continue
-
-        importance_result = permutation_importance(
-            estimator=clf,
-            X=x_vld,
-            y=y_vld,
-            n_repeats=10,
-            n_jobs=-1,  # TODO: check this tomorrow morning
-            scoring=make_scorer(matthews_corrcoef),
-            random_state=random_state,
-        )
-        importances[cond] = importance_result['importances_mean']
-
-    assert not (importances < 0).sum(), "otherwise something wrong"
-    coeffs_filtered['importances'] = importances
-
-    return coeffs_filtered
-
-
 def _mk_save_dirs(cm: str, results_dir: str, classifier_args: Dict[str, str], verbose: bool = True):
     c_dir = "{}".format(classifier_args['C'])
     save_dir = pjoin(results_dir, classifier_args['clf_type'], cm, c_dir)
@@ -593,7 +307,7 @@ def _setup_logger(msg: str, verbose: bool = True) -> logging.Logger:
     return logger
 
 
-def _setup_args() -> argparse.ArgumentParser:
+def _setup_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -727,7 +441,7 @@ def main():
     )
 
     # combine fits together
-    _combine_fits(fit_metadata, verbose=args.verbose)
+    combine_fits(fit_metadata, verbose=args.verbose)
     print("[PROGRESS] done.\n")
 
 
