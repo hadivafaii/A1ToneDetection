@@ -14,7 +14,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import matthews_corrcoef, accuracy_score, f1_score
 
 sys.path.append('..')
-from utils.generic_utils import now, merge_dicts, save_obj
+from utils.generic_utils import now, merge_dicts, save_obj, get_tasks
 from .clf_process import combine_fits
 
 
@@ -378,15 +378,15 @@ def _setup_args() -> argparse.Namespace:
         action="store_true",
     )
     parser.add_argument(
-        "--verbose", help="verbosity",
+        "--verbose",
+        help="verbosity",
         action="store_true",
     )
     parser.add_argument(
-        "--machine",
-        help="machine name, choices = {'SigurRos', 'V1'}",
+        "--base_dir",
+        help="base dir where project is saved",
         type=str,
-        choices={'SigurRos', 'V1'},
-        default='SigurRos',
+        default='Documents/Kanold',
     )
 
     return parser.parse_args()
@@ -395,28 +395,12 @@ def _setup_args() -> argparse.Namespace:
 def main():
     args = _setup_args()
 
-    if args.machine == 'SigurRos':
-        base_dir = pjoin(os.environ['HOME'], 'Documents/PROJECTS/Kanold')
-    elif args.machine == 'V1':
-        base_dir = pjoin(os.environ['HOME'], 'Documents/Kanold')
-    else:
-        raise RuntimeError("invalid machine name: {}".format(args.machine))
-
+    base_dir = pjoin(os.environ['HOME'], args.base_dir)
     results_dir = pjoin(base_dir, 'results')
     processed_dir = pjoin(base_dir, 'python_processed')
     h_load_file = pjoin(processed_dir, "organized_nb_std={:d}.h5".format(args.nb_std))
 
-    raw_tasks = ['hit', 'miss', 'correctreject', 'falsealarm']
-    tasks = []
-    for i, t1 in enumerate(raw_tasks):
-        reduced = [item for item in raw_tasks[i:] if item != t1]
-        for j, t2 in enumerate(reduced):
-            tasks.append('{:s}/{:s}'.format(t1, t2))
-    tasks += [
-        'target7k/nontarget14k', 'target7k/nontarget20k',
-        'target10k/nontarget14k', 'target10k/nontarget20k',
-    ]
-
+    tasks = get_tasks()
     seeds = [np.power(2, i) for i in range(args.nb_seeds)]
 
     import warnings

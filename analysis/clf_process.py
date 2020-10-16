@@ -303,16 +303,60 @@ def _compute_feature_importances(coeffs_filtered: dict, classifiers: dict, verbo
     return coeffs_filtered
 
 
-def main():
-    # args = _setup_args()
-    # regs = ['0.01', '0.001']
-    run_dir = '/home/hadivafa/Documents/Kanold/results/svm/v1_l1_full'
+def _setup_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
 
-    import warnings
+    parser.add_argument(
+        "cm",
+        help="a comment about this fit",
+        type=str,
+    )
+    parser.add_argument(
+        "--clf_type",
+        help="classifier type, choices: {'logreg', 'svm'}",
+        type=str,
+        choices={'logreg', 'svm'},
+        default='logreg',
+    )
+    parser.add_argument(
+        '--regs_to_include',
+        help='list of regularizations to include in the combined result',
+        type=float,
+        nargs='+',
+        default=None,
+    )
+    parser.add_argument(
+        "--verbose",
+        help="verbosity",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--base_dir",
+        help="base dir where project is saved",
+        type=str,
+        default='Documents/PROJECTS/Kanold',
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    args = _setup_args()
+
+    base_dir = pjoin(os.environ['HOME'], args.base_dir)
+    results_dir = pjoin(base_dir, 'results')
+    run_dir = pjoin(results_dir, args.clf_type, args.cm)
+
+    if not isinstance(args.regs_to_include, list):
+        regs_to_include = [args.regs_to_include]
+    else:
+        regs_to_include = args.regs_to_include
+
     # combine fits together
+    import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
-        combine_results(run_dir, verbose=True)
+        combine_results(run_dir, regs_to_include, verbose=args.verbose)
 
     print("[PROGRESS] done.\n")
 

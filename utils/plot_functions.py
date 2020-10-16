@@ -16,26 +16,32 @@ COLORMAPS = ["Blues", "Oranges", "Greens", "Reds", "Purples",
              "YlOrBr", "PuRd", "Greys", "YlGn", "GnBu"]
 
 
-def mk_boxplots(dfs, criterion, save_file=None, display=True, figsize=(24, 8), dpi=100):
+def mk_boxplots(df_all, criterion, save_file=None, display=True, figsize=(24, 8), dpi=100):
     criterion_choices = ['mcc', 'accuracy', 'f1']
     if criterion not in criterion_choices:
         raise RuntimeError("invalid criterion encountered, allowed options are: {}".format(criterion_choices))
 
     tasks = get_tasks()
-    assert set(tasks) == set(dfs["performances_filtered"].task.unique()), "dfs must include all the tasks"
+    assert set(tasks) == set(df_all["performances_filtered"].task.unique()), "df must include all the tasks"
 
-    nb_seeds = len(dfs["performances_filtered"].seed.unique().tolist())
-    nt = len(dfs["performances"].timepoint.unique().tolist())
+    nb_seeds = len(df_all["performances_filtered"].seed.unique().tolist())
+    nt = len(df_all["performances"].timepoint.unique().tolist())
 
     sns.set_style('white')
     fig, ax_arr = plt.subplots(2, 3, figsize=figsize, dpi=dpi)
+    meanprops = {
+        "marker": "o",
+        "markerfacecolor": "bisque",
+        "markeredgecolor": "black",
+        "markersize": "8",
+    }
 
     xticks = range(0, nt + 1, 15)
     _ = ax_arr[0, 0].axvspan(30, 60, facecolor='lightgrey', alpha=0.5, zorder=0)
     sns.boxplot(
         x="best_timepoint",
         y="task",
-        data=dfs["performances_filtered"],
+        data=df_all["performances_filtered"],
         hue="task",
         palette=list(COLORS),
         order=tasks,
@@ -44,22 +50,19 @@ def mk_boxplots(dfs, criterion, save_file=None, display=True, figsize=(24, 8), d
         whis=1.5,
         dodge=False,
         showmeans=True,
-        meanprops={"marker": "o",
-                   "markerfacecolor": "bisque",
-                   "markeredgecolor": "black",
-                   "markersize": "8"},
+        meanprops=meanprops,
         ax=ax_arr[0, 0],
     )
     ax_arr[0, 0].set_xticks(xticks)
     ax_arr[0, 0].set_xticklabels([t / 30 for t in xticks])
-    ax_arr[0, 0].set_xlabel("t (s)", fontsize=15)
+    ax_arr[0, 0].set_xlabel("t (s)", fontsize=11)
 
-    xticks = range(30, nt + 1, 15)
+    xticks = range(30, nt - 15 + 1, 15)
     _ = ax_arr[1, 0].axvspan(30, 60, facecolor='lightgrey', alpha=0.5, zorder=0)
     sns.boxplot(
         x="best_timepoint",
         y="task",
-        data=dfs["performances_filtered"],
+        data=df_all["performances_filtered"],
         hue="task",
         palette=list(COLORS),
         order=tasks,
@@ -68,20 +71,19 @@ def mk_boxplots(dfs, criterion, save_file=None, display=True, figsize=(24, 8), d
         whis=1.5,
         dodge=False,
         showmeans=True,
-        meanprops={"marker": "o",
-                   "markerfacecolor": "bisque",
-                   "markeredgecolor": "black",
-                   "markersize": "8"},
+        meanprops=meanprops,
         ax=ax_arr[1, 0],
     )
+    ax_arr[1, 0].set_xlim(30, nt - 15)
     ax_arr[1, 0].set_xticks(xticks)
     ax_arr[1, 0].set_xticklabels([t / 30 for t in xticks])
-    ax_arr[1, 0].set_xlabel("t (s)", fontsize=15)
+    ax_arr[1, 0].set_xlabel("t (s)", fontsize=11)
+    ax_arr[1, 0].grid(axis='x', ls=':', lw=2)
 
     sns.boxplot(
         x="score",
         y="task",
-        data=dfs["performances_filtered"],
+        data=df_all["performances_filtered"],
         hue="task",
         palette=list(COLORS),
         order=tasks,
@@ -90,10 +92,7 @@ def mk_boxplots(dfs, criterion, save_file=None, display=True, figsize=(24, 8), d
         whis=1.5,
         dodge=False,
         showmeans=True,
-        meanprops={"marker": "o",
-                   "markerfacecolor": "bisque",
-                   "markeredgecolor": "black",
-                   "markersize": "8"},
+        meanprops=meanprops,
         ax=ax_arr[0, 1],
     )
     ax_arr[0, 1].set_xlim(0, 1)
@@ -101,7 +100,7 @@ def mk_boxplots(dfs, criterion, save_file=None, display=True, figsize=(24, 8), d
     sns.boxplot(
         x="score",
         y="task",
-        data=dfs["performances_filtered"],
+        data=df_all["performances_filtered"],
         hue="task",
         palette=list(COLORS),
         order=tasks,
@@ -110,18 +109,16 @@ def mk_boxplots(dfs, criterion, save_file=None, display=True, figsize=(24, 8), d
         whis=1.5,
         dodge=False,
         showmeans=True,
-        meanprops={"marker": "o",
-                   "markerfacecolor": "bisque",
-                   "markeredgecolor": "black",
-                   "markersize": "8"},
+        meanprops=meanprops,
         ax=ax_arr[1, 1],
     )
-    ax_arr[1, 1].set_xlim(0.5, 1)
+    ax_arr[1, 1].set_xlim(0.6, 1)
+    ax_arr[1, 1].grid(axis='x', ls=':', lw=2)
 
     sns.boxplot(
         x="percent_nonzero",
         y="task",
-        data=dfs["coeffs_filtered"],
+        data=df_all["coeffs_filtered"],
         hue="task",
         palette=list(COLORS),
         order=tasks,
@@ -130,17 +127,14 @@ def mk_boxplots(dfs, criterion, save_file=None, display=True, figsize=(24, 8), d
         whis=1.5,
         dodge=False,
         showmeans=True,
-        meanprops={"marker": "o",
-                   "markerfacecolor": "bisque",
-                   "markeredgecolor": "black",
-                   "markersize": "8", },
+        meanprops=meanprops,
         ax=ax_arr[0, 2],
     )
     ax_arr[0, 2].set_xlim(0, 100)
     sns.boxplot(
         x="percent_nonzero",
         y="task",
-        data=dfs["coeffs_filtered"],
+        data=df_all["coeffs_filtered"],
         hue="task",
         palette=list(COLORS),
         order=tasks,
@@ -149,15 +143,13 @@ def mk_boxplots(dfs, criterion, save_file=None, display=True, figsize=(24, 8), d
         whis=1.5,
         dodge=False,
         showmeans=True,
-        meanprops={"marker": "o",
-                   "markerfacecolor": "bisque",
-                   "markeredgecolor": "black",
-                   "markersize": "8", },
+        meanprops=meanprops,
         ax=ax_arr[1, 2],
     )
     ax_arr[1, 2].set_xlim(0, 20)
+    ax_arr[1, 2].grid(axis='x', ls=':', lw=2)
 
-    ax_arr[0, 1].set_title('selected timepoint (used for classification)', fontsize=16)
+    ax_arr[0, 0].set_title('selected timepoint (used for classification)', fontsize=16)
     ax_arr[0, 1].set_title('best score at selected timepoints', fontsize=16)
     ax_arr[0, 2].set_title('percentage of nonzero coefficients', fontsize=16)
 
@@ -174,7 +166,7 @@ def mk_boxplots(dfs, criterion, save_file=None, display=True, figsize=(24, 8), d
     msg = msg.format(criterion, nb_seeds)
     sup = fig.suptitle(msg, y=1.1, fontsize=25)
 
-    _save_fig(fig, sup, save_file, display)
+    save_fig(fig, sup, save_file, display)
     return fig, ax_arr
 
 
@@ -223,7 +215,7 @@ def mk_gridplot(df, mode="importances", save_file=None, display=True, figsize=(9
     msg = msg.format(mode, len(df.seed.unique()))
     sup = fig.suptitle(msg, y=1.0, fontsize=20)
 
-    _save_fig(fig, sup, save_file, display)
+    save_fig(fig, sup, save_file, display)
     return fig, ax_arr
 
 
@@ -275,7 +267,7 @@ def mk_gridhist(df, save_file=None, display=True, figsize=(25, 20), dpi=200):
     msg = msg.format(len(df.seed.unique()))
     sup = fig.suptitle(msg, y=0.97, fontsize=20)
 
-    _save_fig(fig, sup, save_file, display)
+    save_fig(fig, sup, save_file, display)
     return fig, ax_arr
 
 
@@ -350,7 +342,7 @@ def mk_gridscatter(df, mode="importances", save_file=None, display=True, figsize
     msg = msg.format(mode, len(df.seed.unique()))
     sup = fig.suptitle(msg, y=1.0, fontsize=25)
 
-    _save_fig(fig, sup, save_file, display)
+    save_fig(fig, sup, save_file, display)
     return fig, ax_arr
 
 
@@ -463,7 +455,7 @@ def mk_hist(df, mode="importances", save_file=None, display=True, figsize=(20, 1
     msg = msg.format(mode, mode, nb_seeds)
     sup = fig.suptitle(msg, y=1.0, fontsize=20)
 
-    _save_fig(fig, sup, save_file, display)
+    save_fig(fig, sup, save_file, display)
     return fig, ax_arr, df_to_plot
 
 
@@ -578,13 +570,13 @@ def process_df_mk_bestreg_gridplot(df, save_file=None, display=True, figsize=(40
     msg = msg.format(reg_cs)
     sup = fig.suptitle(msg, y=1.0, fontsize=40)
 
-    _save_fig(fig, sup, save_file, display)
+    save_fig(fig, sup, save_file, display)
     return fig, ax_arr, df_processed
 
 
 def mk_performance_plot(df, save_file=None, display=True, figsize=(24, 8), dpi=100):
     tasks = get_tasks()
-    assert set(tasks) == set(df.task.unique()), "dfs must include all the tasks"
+    assert set(tasks) == set(df.task.unique()), "df must include all the tasks"
 
     sns.set_style('whitegrid')
     fig, ax_arr = plt.subplots(2, 5, figsize=figsize, dpi=dpi, sharey='all', sharex='all')
@@ -592,7 +584,7 @@ def mk_performance_plot(df, save_file=None, display=True, figsize=(24, 8), dpi=1
     nt = len(df.timepoint.unique().tolist())
     xticks = range(0, nt + 1, 15)
     for idx, task in enumerate(tasks):
-        j, i = idx // 2, idx % 2
+        i, j = idx // 5, idx % 5
         selected_df = df.loc[df.task == task]
         sns.lineplot(x="timepoint", y="score", data=selected_df, hue='metric', ax=ax_arr[i, j])
         ax_arr[i, j].axvspan(30, 60, facecolor='lightgrey', alpha=0.5)
@@ -607,7 +599,7 @@ def mk_performance_plot(df, save_file=None, display=True, figsize=(24, 8), dpi=1
     msg = "Average classification performance for different tasks at different time points"
     sup = fig.suptitle(msg, y=1.0, fontsize=20)
 
-    _save_fig(fig, sup, save_file, display)
+    save_fig(fig, sup, save_file, display)
     return fig, ax_arr
 
 
@@ -630,7 +622,7 @@ def mk_reg_viz(df_processed, df_stats, save_file=None, display=True, figsize=(20
 
     figs = [f, f1, f2]
     sups = [sup, sup1, sup2]
-    _save_fig(figs, sups, save_file, display, multi=True)
+    save_fig(figs, sups, save_file, display, multi=True)
     return figs
 
 
@@ -691,7 +683,7 @@ def _mk_jointplot(df, x, y, sup_msg='', sup_x=None, position_kws=None,
     return f, sup
 
 
-def _save_fig(fig, sup, save_file, display, multi=False):
+def save_fig(fig, sup, save_file, display, multi=False):
     if save_file is not None:
         save_dir = os.path.dirname(save_file)
         try:

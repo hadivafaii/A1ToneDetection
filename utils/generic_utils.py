@@ -13,6 +13,44 @@ from typing import List, Dict, Any
 from tqdm import tqdm
 
 
+def downsample(data, xy, xbins, ybins, normalize=True):
+    xbins = sorted(xbins)
+    ybins = sorted(ybins)
+
+    assert len(xbins) == len(ybins)
+    nbins = len(xbins)
+
+    delta_x = (max(xbins) - min(xbins)) / nbins
+    delta_y = (max(ybins) - min(ybins)) / nbins
+
+    nc = xy.shape[0]
+    downsampled = np.zeros((nbins, nbins))
+    _norm = np.zeros((nbins, nbins))
+    for cell in range(nc):
+        x, y = xy[cell]
+
+        if x == max(xbins):
+            bin_i = -1
+        else:
+            bin_i = int(np.floor(
+                (x-min(xbins)) / delta_x
+            ))
+        if y == max(ybins):
+            bin_j = -1
+        else:
+            bin_j = int(np.floor(
+                (y-min(ybins)) / delta_y
+            ))
+
+        downsampled[bin_j, bin_i] += data[cell]
+        _norm[bin_j, bin_i] += 1
+
+    if normalize:
+        return np.divide(downsampled, np.maximum(_norm, 1e-8))
+    else:
+        return downsampled
+
+
 def get_tasks():
     raw_tasks = ['hit', 'miss', 'correctreject', 'falsealarm']
     tasks = []
