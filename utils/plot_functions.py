@@ -33,6 +33,10 @@ def mk_trajectory_plot(load_dir: str, global_stats: bool = False, name: str = No
     if name is None:
         name = "ken_2016-08-20"
 
+    cond = results.name == name
+    if not sum(cond):
+        return plt.figure(figsize=figsize, dpi=dpi), None
+
     # get best t
     if global_stats:
         best_t = results.best_t_global.unique().item()
@@ -278,7 +282,7 @@ def mk_coeffs_importances_plot(coeffs_filtered, save_file=None, display=True, fi
     for task, percent_nonzero in percent_nonzeros.items():
         msg2 += "{:s}:  {:.2f} ± {:.2f} {:s},    ".format(task, percent_nonzero.mean(), percent_nonzero.std(), '%')
 
-    sup = fig.suptitle(msg1+msg2, fontsize=17, y=1.04)
+    sup = fig.suptitle(msg1+msg2, fontsize=16, y=1.04)
 
     save_fig(fig, sup, save_file, display)
     return fig, ax_arr, sup
@@ -350,7 +354,7 @@ def mk_reg_selection_plot(performances: pd.DataFrame, criterion: str = 'mcc',
         im_above = ax_arr[2, i].imshow(
             X=above_threshold,
             aspect=nt/nb_c/2,
-            cmap='Greys',
+            cmap='Purples',
         )
         msg = "selected reg: {} / timepoint: {:d}"
         msg = msg.format(reg_cs[a], b)
@@ -384,7 +388,7 @@ def mk_reg_selection_plot(performances: pd.DataFrame, criterion: str = 'mcc',
                 alpha = 0.5
             else:
                 alpha = 0.3
-            ax_arr[j, i].axvspan(30, 60, facecolor='lightgrey', alpha=alpha, zorder=0)
+            ax_arr[j, i].axvspan(30, 60, facecolor='lightgrey', alpha=alpha)
 
             ax_arr[j, i].set_xticks(xticks)
             ax_arr[j, i].set_xticklabels([t / 30 for t in xticks])

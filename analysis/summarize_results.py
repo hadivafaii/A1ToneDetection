@@ -82,10 +82,11 @@ def main():
     tasks = get_tasks()
     downsample_sizes = [16, 8, 4, 2]
 
-    for name in tqdm(names, disable=not args.verbose, dynamic_ncols=True):
-        if name != "ken_2016-08-20":
-            continue
+    pbar = tqdm(names, disable=not args.verbose, dynamic_ncols=True)
+    for name in pbar:
+        pbar.set_description(name)
 
+        # page 1: reg selection
         df_p = performances.loc[performances.name == name]
         fig1, _, sup1 = mk_reg_selection_plot(
             performances=df_p,
@@ -96,6 +97,7 @@ def main():
             dpi=300,
         )
 
+        # page 2: coeffs and importances
         df_cf = coeffs_filtered.loc[coeffs_filtered.name == name]
         fig2, _, sup2 = mk_coeffs_importances_plot(
             coeffs_filtered=df_cf,
@@ -105,6 +107,7 @@ def main():
             dpi=300,
         )
 
+        # page 3: trajs (4way)
         fig3, _ = mk_trajectory_plot(
             load_dir=lda_4way_results_dir,
             global_stats=False,
@@ -115,6 +118,7 @@ def main():
             dpi=400,
         )
 
+        # page 4: trajs (stimfreq)
         fig4, _ = mk_trajectory_plot(
             load_dir=lda_stimfreq_results_dir,
             global_stats=False,
@@ -128,8 +132,11 @@ def main():
         figs = [fig1, fig2, fig3, fig4]
         sups = [sup1, sup2, None, None]
 
+        # last 10 pages: coarse-grained for each task
         for task in tqdm(tasks, disable=not args.verbose, leave=False):
             cond = (performances_filtered.name == name) & (performances_filtered.task == task)
+            if not sum(cond):
+                continue
             timepoint = performances_filtered.loc[cond, 'best_timepoint'].unique().item()
             _fig, _sup, _, _ = mk_coarse_grained_plot(
                 df_all=df_all,
