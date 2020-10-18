@@ -2,8 +2,11 @@ import os
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from os.path import join as pjoin
 
 from matplotlib.lines import Line2D
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.gridspec import GridSpec
 from matplotlib.patches import FancyBboxPatch, BoxStyle
 from matplotlib.collections import PatchCollection
 from matplotlib.backends.backend_pdf import FigureCanvasPdf, PdfPages
@@ -15,8 +18,392 @@ COLORS = list(sns.color_palette())
 COLORMAPS = ["Blues", "Oranges", "Greens", "Reds", "Purples",
              "YlOrBr", "PuRd", "Greys", "YlGn", "GnBu"]
 
+sns.set_style('white')
 
-def mk_boxplots(df_all, criterion, save_file=None, display=True, figsize=(24, 8), dpi=100):
+
+def mk_trajectory_plot(load_dir: str, global_stats: bool = False, name: str = None,
+                       save_file=None, display=True, figsize=(12, 14), dpi=600):
+
+    # load data
+    results = pd.read_pickle(pjoin(load_dir, 'results.df'))
+    extras = np.load(pjoin(load_dir, 'extras.npy'), allow_pickle=True).item()
+    fit_metadata = np.load(pjoin(load_dir, 'fit_metadata.npy'), allow_pickle=True).item()
+
+    # sample experiment
+    if name is None:
+        name = "ken_2016-08-20"
+
+    # get best t
+    if global_stats:
+        best_t = results.best_t_global.unique().item()
+    else:
+        best_t = results.loc[results.name == name, 'best_t'].unique().item()
+
+    # get traj data
+    l2i = fit_metadata['lbl2idx']
+    i2l = fit_metadata['idx2lbl']
+
+    x_mat = extras[name].X
+    lbls = extras[name].Y
+    clfs = extras[name].clfs
+
+    proj_mat = clfs[best_t].scalings_[:, :3]
+    z = x_mat @ proj_mat
+
+    trajectory_dict = {lbl: z[:, lbls == idx, :] for lbl, idx in l2i.items()}
+
+    nt = len(results.timepoint.unique())
+    xticks = range(0, nt + 1, 15)
+
+    sns.set_style('whitegrid')
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    gs = GridSpec(nrows=2, ncols=3, height_ratios=[1, 4.3])
+
+    ax0 = fig.add_subplot(gs[0, 0])
+    ax1 = fig.add_subplot(gs[0, 1], sharex=ax0)
+    ax2 = fig.add_subplot(gs[0, 2], sharex=ax0)
+
+    ax0.axvspan(30, 60, facecolor='lightgrey', alpha=0.5, zorder=0)
+    ax1.axvspan(30, 60, facecolor='lightgrey', alpha=0.5, zorder=0)
+    ax2.axvspan(30, 60, facecolor='lightgrey', alpha=0.5, zorder=0)
+    ax0.axvline(best_t, color='magenta' if global_stats else 'limegreen', ls='--', lw=2)
+    ax1.axvline(best_t, color='magenta' if global_stats else 'limegreen', ls='--', lw=2)
+    ax2.axvline(best_t, color='magenta' if global_stats else 'limegreen', ls='--', lw=2, label='best t')
+
+    if global_stats:
+        df = results
+    else:
+        df = results.loc[results.name == name]
+    sns.lineplot(data=df, y='performance', x='timepoint', color='k', ax=ax0, lw=3)
+    sns.lineplot(data=df, y='distance', x='timepoint', color='orangered', ax=ax1, lw=3)
+    sns.lineplot(data=df, y='sb', x='timepoint', color='royalblue', ax=ax2, lw=3)
+
+    ax0.set_ylabel('')
+    ax1.set_ylabel('')
+    ax2.set_ylabel('')
+    ax0.set_xlabel('t (s)', fontsize=15)
+    ax1.set_xlabel('t (s)', fontsize=15)
+    ax2.set_xlabel('t (s)', fontsize=15)
+    ax0.set_xticks(xticks)
+    ax1.set_xticks(xticks)
+    ax2.set_xticks(xticks)
+    ax0.set_xticklabels([t / 30 for t in xticks])
+    ax1.set_xticklabels([t / 30 for t in xticks])
+    ax2.set_xticklabels([t / 30 for t in xticks])
+    ax0.set_title("performance (mcc)", fontsize=15)
+    ax1.set_title("distance", fontsize=15)
+    ax2.set_title("scatter matrix between classes", fontsize=15)
+    ax2.legend(loc='lower right')
+
+    # 3d scatter
+    ax = fig.add_subplot(gs[1, :], projection='3d')
+
+    smin = 10
+    smax = 1000
+    markers = ['o', 'v', '^', 's']
+    legend_elements = []
+    for idx, lbl in i2l.items():
+        tau = trajectory_dict[lbl]
+        mu = tau.mean(1)[:best_t]
+
+        sigma = np.linalg.norm(tau - tau.mean(1, keepdims=True), axis=-1).mean(-1)
+        a = (smax - smin) / (max(sigma) - min(sigma))
+        b = smin - a * min(sigma)
+        scale = a * sigma + b
+
+        ax.plot(mu[:, 0], mu[:, 1], mu[:, 2], color=COLORS[idx], lw=3, alpha=0.5)
+        # core
+        ax.scatter(
+            mu[:, 0], mu[:, 1], mu[:, 2], alpha=1,
+            marker=markers[idx], s=50, label=lbl, cmap=COLORMAPS[idx], c=range(best_t))
+        # shadow
+        ax.scatter(
+            mu[:, 0], mu[:, 1], mu[:, 2], alpha=0.2,
+            marker=markers[idx], s=scale[:best_t], cmap=COLORMAPS[idx], c=range(best_t))
+        # legend
+        legend_elements.append(Line2D(
+            [0], [0], marker=markers[idx], color='w', label=lbl,
+            markerfacecolor=COLORS[idx], markersize=15))
+
+    ax.legend(handles=legend_elements, loc='upper left', fontsize='large')
+
+    if global_stats:
+        msg = "representative tarajectory:\n\n name = {}\n t = 0 . . .  {:d} (best t)"
+    else:
+        msg = "name = {}\n t = 0 . . .  {:d} (best t)"
+    msg = msg.format(name, best_t)
+    ax.set_title(msg, fontsize=17)
+
+    fig.tight_layout()
+    save_fig(fig, None, save_file, display)
+    return fig, np.array([ax0, ax1, ax2, ax])
+
+
+def mk_coeffs_importances_plot(coeffs_filtered, save_file=None, display=True, figsize=(67, 13), dpi=200):
+    nc = len(coeffs_filtered.cell_indx.unique())
+    nb_seeds = len(coeffs_filtered.seed.unique())
+    tasks = get_tasks()
+
+    sns.set_style('white')
+
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    gs = GridSpec(nrows=4, ncols=len(tasks), height_ratios=[0.3, 0.3, 1, 1])
+
+    xticks = range(0, nc + 1, 10)
+    axes = []
+    percent_nonzeros = {}
+    for i, task in enumerate(tasks):
+        ax0 = fig.add_subplot(gs[0, i])
+        ax1 = fig.add_subplot(gs[1, i])
+        ax2 = fig.add_subplot(gs[2, i])
+        ax3 = fig.add_subplot(gs[3, i])
+
+        ax0.set_title("{:s}, t = nan".format(task, ), fontsize=15)
+        ax0.set_xticks(xticks)
+        ax1.set_xticks(xticks)
+        ax0.set_yticks([0])
+        ax1.set_yticks([0])
+        ax0.grid(axis='both', ls=':', lw=2)
+        ax1.grid(axis='both', ls=':', lw=2)
+
+        ax2.set_xticks([])
+        if i > 0:
+            ax0.set_yticks([])
+            ax1.set_yticks([])
+            ax2.set_yticks([])
+            ax3.set_yticks([])
+
+        axes.append([ax0, ax1, ax2, ax3])
+
+        cond = coeffs_filtered.task == task
+        if not (sum(cond) and nc):
+            continue
+
+        selected_df = coeffs_filtered.loc[cond]
+
+        percent_nonzero = selected_df.percent_nonzero.to_numpy()
+        percent_nonzero = percent_nonzero.reshape(nb_seeds, nc)
+        percent_nonzero = np.unique(percent_nonzero, axis=1)
+        percent_nonzeros[task] = percent_nonzero
+
+        best_t = selected_df.timepoint.unique()
+        ax0.set_title("{:s}, t = {:d}".format(task, best_t.item()), fontsize=15)
+
+        # 1st and 2nd rows
+        sns.lineplot(
+            x='cell_indx',
+            y='coeffs',
+            data=selected_df,
+            color=COLORS[i],
+            lw=2,
+            ax=ax0,
+        )
+        sns.lineplot(
+            x='cell_indx',
+            y='importances',
+            data=selected_df,
+            color=COLORS[i],
+            lw=2,
+            ax=ax1,
+        )
+        ax1.set_xlabel('')
+
+        # 3rd and 4th rows
+        x = selected_df.x.to_numpy()[:nc]
+        y = selected_df.y.to_numpy()[:nc]
+
+        coeffs = selected_df.coeffs.to_numpy()
+        coeffs = coeffs.reshape(nb_seeds, nc).mean(0)
+        vminmax_coeffs = max(abs(coeffs))
+
+        importances = selected_df.importances.to_numpy()
+        importances = importances.reshape(nb_seeds, nc).mean(0)
+        vminmax_importances = max(abs(importances))
+
+        _ = ax2.scatter(
+            x=x[coeffs == 0],
+            y=y[coeffs == 0],
+            color='w',
+            s=50,
+            edgecolors='k',
+            linewidths=0.4,
+        )
+        s = ax2.scatter(
+            x=x[coeffs != 0],
+            y=y[coeffs != 0],
+            c=coeffs[coeffs != 0],
+            cmap='seismic',
+            s=120,
+            vmin=-vminmax_coeffs,
+            vmax=vminmax_coeffs,
+            edgecolors='k',
+            linewidths=0.4,
+        )
+        plt.colorbar(s, ax=ax2)
+
+        _ = ax3.scatter(
+            x=x[importances == 0],
+            y=y[importances == 0],
+            color='w',
+            s=50,
+            edgecolors='k',
+            linewidths=0.4,
+        )
+        s = ax3.scatter(
+            x=x[importances != 0],
+            y=y[importances != 0],
+            c=importances[importances != 0],
+            cmap=COLORMAPS[i],
+            s=120,
+            vmin=0,
+            vmax=vminmax_importances,
+            edgecolors='k',
+            linewidths=0.4,
+        )
+        plt.colorbar(s, ax=ax3)
+
+        if i == 0:
+            ax0.set_ylabel("coeffs", fontsize=15)
+            ax1.set_ylabel("importances", fontsize=15)
+            ax2.set_ylabel("coeffs", fontsize=15)
+            ax3.set_ylabel("importances", fontsize=15)
+
+    ax_arr = np.array(axes).T
+
+    msg1 = "classifier coefficients are sparse. averaged results obtained using {} different seeds,   "
+    msg1 += "1st & 3rd rows: coeffs  /  2nd and 4th rows: importances\n\n"
+    msg1 = msg1.format(nb_seeds)
+
+    msg2 = "avg percent nonzero coeffs for each task (error bars are due to averaging for different random seeds):\n"
+    for task, percent_nonzero in percent_nonzeros.items():
+        msg2 += "{:s}:  {:.2f} ± {:.2f} {:s},    ".format(task, percent_nonzero.mean(), percent_nonzero.std(), '%')
+
+    sup = fig.suptitle(msg1+msg2, fontsize=17, y=1.04)
+
+    save_fig(fig, sup, save_file, display)
+    return fig, ax_arr, sup
+
+
+def mk_reg_selection_plot(performances: pd.DataFrame, criterion: str = 'mcc',
+                          save_file=None, display=True, figsize=(50, 8), dpi=200):
+    criterion_choices = {'mcc': 0, 'accuracy': 1, 'f1': 2}
+    assert criterion in criterion_choices
+    metric_indx = criterion_choices[criterion]
+
+    tasks = get_tasks()
+    reg_cs = np.unique(performances['reg_C'])
+
+    nb_c = len(reg_cs)
+    nb_seeds = len(performances.seed.unique())
+    nt = len(performances.timepoint.unique())
+
+    sns.set_style('white')
+    fig, ax_arr = plt.subplots(3, len(tasks), sharex='all', sharey='all', figsize=figsize, dpi=dpi)
+
+    xticks = range(0, nt + 1, 15)
+    for i, task in enumerate(tasks):
+        ax_arr[0, i].set_title(task, fontsize=15)
+        cond = performances.task == task
+        if not sum(cond):
+            continue
+
+        best_reg = performances.loc[cond].best_reg.unique().item()
+        best_timepoint = performances.loc[cond].best_timepoint.unique().item()
+
+        a = np.where(reg_cs == best_reg)[0].item()
+        b = best_timepoint
+
+        scores_all = performances.score[cond].to_numpy()
+        scores_all = scores_all.reshape(nb_c, nb_seeds, 4, nt)
+
+        scores = scores_all[..., metric_indx, :]
+        confidences = scores_all[..., -1, :]
+
+        mean_scores = scores.mean(1)
+        mean_confidences = confidences.mean(1)
+
+        max_score = np.max(mean_scores[..., 30:])
+        threshold = 0.9
+        max_score_threshold = threshold * max_score
+
+        above_threshold_bool = mean_scores > max_score_threshold
+        above_threshold = mean_scores.copy()
+        above_threshold[~above_threshold_bool] = 0
+
+        im_score = ax_arr[0, i].imshow(
+            X=mean_scores,
+            aspect=nt/nb_c/2,
+            cmap='hot',
+        )
+        plt.colorbar(im_score, ax=ax_arr[0, i], fraction=0.0235, pad=0.04)
+
+        im_confidence = ax_arr[1, i].imshow(
+            X=mean_confidences,
+            aspect=nt/nb_c/2,
+            cmap='Greens',
+        )
+        msg = "selected avg score: {:.1f} / confidence: {:.1f}"
+        msg = msg.format(mean_scores[a, b], mean_confidences[a, b])
+        ax_arr[1, i].set_title(msg, fontsize=10)
+        plt.colorbar(im_confidence, ax=ax_arr[1, i], fraction=0.0235, pad=0.04)
+
+        im_above = ax_arr[2, i].imshow(
+            X=above_threshold,
+            aspect=nt/nb_c/2,
+            cmap='Greys',
+        )
+        msg = "selected reg: {} / timepoint: {:d}"
+        msg = msg.format(reg_cs[a], b)
+        ax_arr[2, i].set_title(msg, fontsize=10)
+        plt.colorbar(im_above, ax=ax_arr[2, i], fraction=0.0235, pad=0.04)
+
+        rx = FancyBboxPatch(
+            xy=(0, a),
+            width=nt - 1,
+            height=0,
+            boxstyle=BoxStyle("Round", pad=figsize[1] / nb_c * 0.3),
+        )
+        ry = FancyBboxPatch(
+            xy=(b, 0),
+            width=0,
+            height=nb_c,
+            boxstyle=BoxStyle("Round", pad=figsize[0] / nt * 5),
+        )
+        r = [rx, ry]
+
+        pc = PatchCollection(r, edgecolor='dodgerblue', facecolors='None')
+        ax_arr[0, i].add_collection(pc)
+        pc = PatchCollection(r, edgecolor='dodgerblue', facecolors='None')
+        ax_arr[1, i].add_collection(pc)
+        pc = PatchCollection(r, edgecolor='dodgerblue', facecolors='None')
+        ax_arr[2, i].add_collection(pc)
+
+        for j in range(3):
+            if j == 2:
+                ax_arr[j, i].set_xlabel('t (s)', fontsize=15)
+                alpha = 0.5
+            else:
+                alpha = 0.3
+            ax_arr[j, i].axvspan(30, 60, facecolor='lightgrey', alpha=alpha, zorder=0)
+
+            ax_arr[j, i].set_xticks(xticks)
+            ax_arr[j, i].set_xticklabels([t / 30 for t in xticks])
+
+            ax_arr[j, i].set_yticks(range(nb_c))
+            ax_arr[j, i].set_yticklabels(reg_cs)
+
+            if i == 0:
+                ax_arr[j, i].set_ylabel('C', fontsize=15)
+
+    msg = "best reg and timepoint selection. Y axis is reg value (smaller = stronger) and X axis is time\n"
+    msg += "Top: performance / Mid: confidence / Bottom: points within 90 % threshold of max score"
+    sup = fig.suptitle(msg, fontsize=20, y=1.06)
+
+    save_fig(fig, sup, save_file, display)
+    return fig, ax_arr, sup
+
+
+def mk_boxplots(df_all, criterion: str = 'mcc', save_file=None, display=True, figsize=(24, 8), dpi=100):
     criterion_choices = ['mcc', 'accuracy', 'f1']
     if criterion not in criterion_choices:
         raise RuntimeError("invalid criterion encountered, allowed options are: {}".format(criterion_choices))
@@ -164,7 +551,7 @@ def mk_boxplots(df_all, criterion, save_file=None, display=True, figsize=(24, 8)
 
     msg = "Results obtained using '{:s}' criterion and {:d} different seeds"
     msg = msg.format(criterion, nb_seeds)
-    sup = fig.suptitle(msg, y=1.1, fontsize=25)
+    sup = fig.suptitle(msg, y=1.03, fontsize=25)
 
     save_fig(fig, sup, save_file, display)
     return fig, ax_arr
@@ -587,7 +974,7 @@ def mk_performance_plot(df, save_file=None, display=True, figsize=(24, 8), dpi=1
         i, j = idx // 5, idx % 5
         selected_df = df.loc[df.task == task]
         sns.lineplot(x="timepoint", y="score", data=selected_df, hue='metric', ax=ax_arr[i, j])
-        ax_arr[i, j].axvspan(30, 60, facecolor='lightgrey', alpha=0.5)
+        ax_arr[i, j].axvspan(30, 60, facecolor='lightgrey', alpha=0.5, zorder=0)
         ax_arr[i, j].set_title("{:s}".format(task, fontsize=15))
         if idx > 0:
             ax_arr[i, j].get_legend().remove()
@@ -697,7 +1084,10 @@ def save_fig(fig, sup, save_file, display, multi=False):
             with PdfPages(save_file) as pages:
                 for f, s in zip(fig, sup):
                     canvas = FigureCanvasPdf(f)
-                    canvas.print_figure(pages, dpi=f.dpi, bbox_inches='tight', bbox_extra_artists=[s])
+                    if s is not None:
+                        canvas.print_figure(pages, dpi=f.dpi, bbox_inches='tight', bbox_extra_artists=[s])
+                    else:
+                        canvas.print_figure(pages, dpi=f.dpi, bbox_inches='tight')
 
     if display:
         if isinstance(fig, list):

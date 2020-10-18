@@ -4,6 +4,7 @@ import h5py
 import argparse
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from tqdm import tqdm
 from typing import List, Dict
 from os.path import join as pjoin
@@ -170,7 +171,7 @@ def mk_coarse_grained_plot(
     sup = fig.suptitle(msg, fontsize=20)
     save_fig(fig, sup, save_file, display)
 
-    return fig, axes, subplots
+    return fig, sup, axes, subplots
 
 
 def _mk_fig(
@@ -192,6 +193,7 @@ def _mk_fig(
     # get the data at certain timepoint
     datalist = [item[timepoint] for item in data_list]
 
+    sns.set_style('white')
     fig = plt.figure(figsize=figsize, dpi=dpi)
     gs = GridSpec(nrows=3, ncols=2 + len(downsample_sizes),
                   width_ratios=[0.2, 1] + [0.8] * len(downsample_sizes))
@@ -287,7 +289,7 @@ def _mk_fig(
     y_lbls = [
         "coeffs,  {:s} nonzero: {:.2f} ± {:.2f}".format('%', percent_nonzero.mean(), percent_nonzero.std()),
         "avg dff ({}),  num = {:d}".format(extras['pos_lbl'], extras['num_pos']),
-        "avg dff ({}),  num = {:d}".format(extras['neg_lbl'], extras['num_pos']),
+        "avg dff ({}),  num = {:d}".format(extras['neg_lbl'], extras['num_neg']),
     ]
     for _ax, lbl in zip(ax_all[:, -1], y_lbls):
         _ax.set_ylabel(lbl, rotation=270, fontsize=15, labelpad=20)
@@ -320,6 +322,7 @@ def _mk_downsampled(datalist, vminmax_list, xy, fig, gs_list, nbins, normalize):
         ax.set_yticklabels([int(e) for e in ybins])
         ax.tick_params(axis='x', labelrotation=90)
         ax.invert_yaxis()
+        ax.grid()
         if i == 0:
             ax.set_title('downsample {} x {}'.format(nbins, nbins), fontsize=15)
         ax_list.append(ax)
@@ -399,7 +402,7 @@ def _setup_args() -> argparse.Namespace:
 
     parser.add_argument(
         "cm",
-        help="a comment about this fit",
+        help="comment describing the fit to use",
         type=str,
     )
     parser.add_argument(

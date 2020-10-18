@@ -11,7 +11,7 @@ from collections import namedtuple
 
 from sklearn.metrics import matthews_corrcoef
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from utils.generic_utils import merge_dicts, save_obj, now
+from utils.generic_utils import merge_dicts, save_obj, now, reset_df
 
 LDA = namedtuple('LDA', ('name', 'X', 'Y', 'trajs', 'clfs'))
 
@@ -177,9 +177,46 @@ def run_lda_analysis(
     # merge all results together, can be used to get df
     results = merge_dicts(results_dictlist)
     results = pd.DataFrame.from_dict(results)
+    results = _compute_best_t(results)
 
     # save
     save_obj(results, 'results.df', save_dir, 'df')
     save_obj(lda_dict, 'extras.npy', save_dir, 'np')
 
     return results, lda_dict, fit_metadata
+
+
+def _compute_best_t(results: pd.DataFrame):
+    names = results.name.unique().tolist()
+    results['best_t'] = -1
+    for name in names:
+        df = results.loc[results.name == name]
+        grouped = df.groupby(['timepoint']).mean()
+
+        mean_j = grouped.J.to_numpy()
+        mean_d = grouped.distance.to_numpy()
+        mean_p = grouped.performance.to_numpy()
+
+        mean_j /= np.linalg.norm(mean_j)
+        mean_d /= np.linalg.norm(mean_d)
+        mean_p /= np.linalg.norm(mean_p)
+
+        v = (mean_j + mean_d + mean_p) / 3
+        best_t = np.argmax(v)
+        results.loc[results.name == name, 'best_t'] = best_t
+
+    grouped = results.groupby(['timepoint']).mean()
+
+    mean_j = grouped.J.to_numpy()
+    mean_d = grouped.distance.to_numpy()
+    mean_p = grouped.performance.to_numpy()
+
+    mean_j /= np.linalg.norm(mean_j)
+    mean_d /= np.linalg.norm(mean_d)
+    mean_p /= np.linalg.norm(mean_p)
+
+    v = (mean_j + mean_d + mean_p) / 3
+    best_t_global = np.argmax(v)
+    results['best_t_global'] = best_t_global
+
+    return reset_df(results)
