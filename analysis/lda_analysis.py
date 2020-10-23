@@ -1,11 +1,13 @@
 import os
 import h5py
 import random
+import argparse
 import numpy as np
 import pandas as pd
-from tqdm.notebook import tqdm  # TODO: later, make this into script, __main__ etc, then make this back to normal tqdm
+from tqdm import tqdm
 from numpy.linalg import norm
 from typing import Union, List
+from copy import deepcopy as dc
 from os.path import join as pjoin
 from collections import namedtuple
 
@@ -20,29 +22,56 @@ def run_lda_analysis(
         cm: str,
         load_file: str,
         results_dir: str,
-        trial_types: List[str] = None,
+        trial_types: List[str],
         shrinkage: Union[float, str] = 'auto',
         xv_fold: int = 5,
         random_state: int = 42,
+        verbose: bool = True,
 ):
 
     random.seed(random_state)
     np.random.seed(random_state)
+    rng = np.random.RandomState(random_state)
 
-    if trial_types is None:
-        trial_types = ['hit', 'miss', 'correctreject', 'falsealarm']
     lbl2idx = {lbl: i for (i, lbl) in enumerate(trial_types)}
     idx2lbl = {i: k for k, i in lbl2idx.items()}
 
     msg = "[INFO] running LDA analysis using shrinkage = '{}'\n"
-    msg += "[INFO] class labels: {}\n"
-    msg = msg.format(shrinkage, trial_types)
-    print(msg)
+    msg += "[INFO] cm: {}, class labels: {}\n"
+    msg = msg.format(shrinkage, cm, trial_types)
+    if verbose:
+        print(msg)
 
+    # save dir
+    save_dir = pjoin(results_dir, 'lda', cm)
+    os.makedirs(save_dir, exist_ok=True)
+
+    fit_metadata = {
+        'shrinkage': shrinkage,
+        'lbl2idx': lbl2idx,
+        'idx2lbl': idx2lbl,
+        'save_dir': save_dir,
+        'datetime': now(),
+    }
+    save_obj(fit_metadata, 'fit_metadata.npy', save_dir, 'np')
+
+    for shuffle_labels in [False, True]:
+        results, lda_dict = _lda(load_file, shrinkage, xv_fold, lbl2idx, idx2lbl, rng, shuffle_labels, verbose)
+
+        # save
+        file_name = 'results_shuffled.df' if shuffle_labels else 'results.df'
+        save_obj(results, file_name, save_dir, 'df', verbose)
+        file_name = 'extras_shuffled.pkl' if shuffle_labels else 'extras.pkl'
+        save_obj(lda_dict, file_name, save_dir, 'pkl', verbose)
+
+
+def _lda(load_file, shrinkage, xv_fold, lbl2idx, idx2lbl, rng, shuffle_labels, verbose):
     lda_dict = {}
     results_dictlist = []
     h5_file = h5py.File(load_file, "r")
-    for name in tqdm(h5_file, dynamic_ncols=True):
+    pbar = tqdm(h5_file, dynamic_ncols=True, disable=not verbose)
+    for name in pbar:
+        pbar.set_description("{}, shuffle = {}".format(name, shuffle_labels))
         behavior = h5_file[name]["behavior"]
         trial_info_grp = behavior["trial_info"]
 
@@ -55,7 +84,8 @@ def run_lda_analysis(
             trial_info[k] = np.array(v, dtype=int)
 
         if not set(lbl2idx.keys()).issubset(set(trial_info.keys())):
-            print("missing some trial types, skipping {} . . . ".format(name))
+            if verbose:
+                print("missing some trial types, skipping {} . . . ".format(name))
             continue
 
         lbls = []
@@ -80,15 +110,23 @@ def run_lda_analysis(
 
         num_samples = np.array([len(np.where(y_trn == i)[0]) for i in idx2lbl.keys()])
         if any(num_samples < 2):
-            print("not enough samples, skipping {} . . .".format(name))
+            if verbose:
+                print("not enough samples, skipping {} . . .".format(name))
             continue
 
         performance = np.zeros(nt)
         embedded = np.zeros((nt, len(vld_indxs), 3))
 
         _clfs = {}
-        for t in tqdm(range(nt), leave=False):
+        for t in tqdm(range(nt), leave=False, disable=not verbose):
             x_trn, x_vld = dff_combined[t][trn_indxs], dff_combined[t][vld_indxs]
+            if shuffle_labels:
+                while True:
+                    y_shuffled = dc(y_trn)
+                    rng.shuffle(y_shuffled)
+                    if not np.all(y_shuffled == y_trn):
+                        break
+                y_trn = y_shuffled
             clf = LinearDiscriminantAnalysis(
                 n_components=3,
                 solver='eigen',
@@ -161,29 +199,12 @@ def run_lda_analysis(
         results_dictlist.append(data_dict)
         lda_dict[name] = LDA(name, dff_combined, y, embedded_dict, _clfs)
 
-    # save dir
-    save_dir = pjoin(results_dir, 'lda', cm)
-    os.makedirs(save_dir, exist_ok=True)
-
-    fit_metadata = {
-        'shrinkage': shrinkage,
-        'lbl2idx': lbl2idx,
-        'idx2lbl': idx2lbl,
-        'save_dir': save_dir,
-        'datetime': now(),
-    }
-    save_obj(fit_metadata, 'fit_metadata.npy', save_dir, 'np')
-
     # merge all results together, can be used to get df
     results = merge_dicts(results_dictlist)
     results = pd.DataFrame.from_dict(results)
     results = _compute_best_t(results)
 
-    # save
-    save_obj(results, 'results.df', save_dir, 'df')
-    save_obj(lda_dict, 'extras.npy', save_dir, 'np')
-
-    return results, lda_dict, fit_metadata
+    return results, lda_dict
 
 
 def _compute_best_t(results: pd.DataFrame):
@@ -220,3 +241,69 @@ def _compute_best_t(results: pd.DataFrame):
     results['best_t_global'] = best_t_global
 
     return reset_df(results)
+
+
+def _setup_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--nb_std",
+        help="outlier removal threshold",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--xv_fold",
+        type=int,
+        default=5,
+    )
+    parser.add_argument(
+        "--seed",
+        help="random seed",
+        type=int,
+        default=42,
+    )
+    parser.add_argument(
+        "--verbose",
+        help="verbosity",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--base_dir",
+        help="base dir where project is saved",
+        type=str,
+        default='Documents/PROJECTS/Kanold',
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    args = _setup_args()
+
+    base_dir = pjoin(os.environ['HOME'], args.base_dir)
+    results_dir = pjoin(base_dir, 'results')
+    h_load_file = pjoin(base_dir, 'python_processed', "organized_nb_std={:d}.h5".format(args.nb_std))
+
+    runs = {
+        '4way': ['hit', 'miss', 'correctreject', 'falsealarm'],
+        'stimfreq': ['target7k', 'target10k', 'nontarget14k', 'nontarget20k'],
+    }
+
+    for cm, trial_types in runs.items():
+        run_lda_analysis(
+            cm=cm,
+            load_file=h_load_file,
+            results_dir=results_dir,
+            shrinkage='auto',
+            trial_types=trial_types,
+            xv_fold=args.xv_fold,
+            random_state=args.seed,
+            verbose=args.verbose,
+        )
+
+    print("[PROGRESS] done.\n")
+
+
+if __name__ == "__main__":
+    main()

@@ -11,13 +11,15 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import matthews_corrcoef, make_scorer
 
 sys.path.append('..')
-from utils.generic_utils import now, rm_dirs, merge_dicts, save_obj
+from utils.generic_utils import now, rm_dirs, merge_dicts, save_obj, smoothen
 
 
 def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bool = True):
     # sorts in increasing C value or: decreasing reg strength
     runs = sorted(os.listdir(run_dir), key=lambda c: float(c))
     if regs_to_include is not None:
+        if not isinstance(regs_to_include, list):
+            regs_to_include = [regs_to_include]
         runs = [item for item in runs if item in regs_to_include]
     if len(runs) == 0:
         raise RuntimeError("data not found")
@@ -208,6 +210,7 @@ def _detect_best_reg_timepoint(
         criterion: str = 'mcc',
         start_time: int = 30,
         threshold: float = 0.9,
+        filter_sz: int = 5,
         verbose: bool = True,) -> dict:
 
     criterion_options = {'mcc': 0, 'accuracy': 1, 'f1': 2}
@@ -238,6 +241,7 @@ def _detect_best_reg_timepoint(
             confidences = scores_all[..., -1, :]
 
             mean_scores = scores.mean(1)
+            mean_scores = smoothen(mean_scores, filter_sz=filter_sz)
             mean_confidences = confidences.mean(1)
 
             max_score = np.max(mean_scores[:, start_time:])
@@ -316,7 +320,7 @@ def _setup_args() -> argparse.Namespace:
         help="classifier type, choices: {'logreg', 'svm'}",
         type=str,
         choices={'logreg', 'svm'},
-        default='logreg',
+        default='svm',
     )
     parser.add_argument(
         '--regs_to_include',
@@ -347,16 +351,11 @@ def main():
     results_dir = pjoin(base_dir, 'results')
     run_dir = pjoin(results_dir, args.clf_type, args.cm)
 
-    if not isinstance(args.regs_to_include, list):
-        regs_to_include = [args.regs_to_include]
-    else:
-        regs_to_include = args.regs_to_include
-
     # combine fits together
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
-        combine_results(run_dir, regs_to_include, verbose=args.verbose)
+        combine_results(run_dir, args.regs_to_include, verbose=args.verbose)
 
     print("[PROGRESS] done.\n")
 

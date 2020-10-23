@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cm=$1
-clf_type=${2:-logreg}
+clf_type=${2:-svm}
 base_dir=${3:-null}
 
 if [[ $base_dir == "null" ]]; then

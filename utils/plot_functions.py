@@ -1,4 +1,5 @@
 import os
+import pickle
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -12,7 +13,7 @@ from matplotlib.collections import PatchCollection
 from matplotlib.backends.backend_pdf import FigureCanvasPdf, PdfPages
 import matplotlib.pyplot as plt
 import seaborn as sns
-from .generic_utils import reset_df, get_tasks
+from .generic_utils import reset_df, get_tasks, smoothen
 
 COLORS = list(sns.color_palette())
 COLORMAPS = ["Blues", "Oranges", "Greens", "Reds", "Purples",
@@ -21,13 +22,17 @@ COLORMAPS = ["Blues", "Oranges", "Greens", "Reds", "Purples",
 sns.set_style('white')
 
 
-def mk_trajectory_plot(load_dir: str, global_stats: bool = False, name: str = None,
+def mk_trajectory_plot(load_dir: str, global_stats: bool = False, shuffled: bool = False, name: str = None,
                        save_file=None, display=True, figsize=(12, 14), dpi=600):
 
     # load data
-    results = pd.read_pickle(pjoin(load_dir, 'results.df'))
-    extras = np.load(pjoin(load_dir, 'extras.npy'), allow_pickle=True).item()
     fit_metadata = np.load(pjoin(load_dir, 'fit_metadata.npy'), allow_pickle=True).item()
+    file_name = 'results_shuffled.df' if shuffled else 'results.df'
+    results = pd.read_pickle(pjoin(load_dir, file_name))
+
+    file_name = 'extras_shuffled.pkl' if shuffled else 'extras.pkl'
+    with open(pjoin(load_dir, file_name), 'rb') as handle:
+        extras = pickle.load(handle)
 
     # sample experiment
     if name is None:
@@ -35,7 +40,7 @@ def mk_trajectory_plot(load_dir: str, global_stats: bool = False, name: str = No
 
     cond = results.name == name
     if not sum(cond):
-        return plt.figure(figsize=figsize, dpi=dpi), None
+        return None, None
 
     # get best t
     if global_stats:
@@ -289,20 +294,20 @@ def mk_coeffs_importances_plot(coeffs_filtered, save_file=None, display=True, fi
 
 
 def mk_reg_selection_plot(performances: pd.DataFrame, criterion: str = 'mcc',
-                          save_file=None, display=True, figsize=(50, 8), dpi=200):
+                          save_file=None, display=True, figsize=(50, 11), dpi=200):
     criterion_choices = {'mcc': 0, 'accuracy': 1, 'f1': 2}
     assert criterion in criterion_choices
     metric_indx = criterion_choices[criterion]
 
     tasks = get_tasks()
-    reg_cs = np.unique(performances['reg_C'])
+    reg_cs = performances.reg_C.unique()
 
     nb_c = len(reg_cs)
     nb_seeds = len(performances.seed.unique())
     nt = len(performances.timepoint.unique())
 
     sns.set_style('white')
-    fig, ax_arr = plt.subplots(3, len(tasks), sharex='all', sharey='all', figsize=figsize, dpi=dpi)
+    fig, ax_arr = plt.subplots(4, len(tasks), sharex='all', sharey='all', figsize=figsize, dpi=dpi)
 
     xticks = range(0, nt + 1, 15)
     for i, task in enumerate(tasks):
@@ -341,7 +346,14 @@ def mk_reg_selection_plot(performances: pd.DataFrame, criterion: str = 'mcc',
         )
         plt.colorbar(im_score, ax=ax_arr[0, i], fraction=0.0235, pad=0.04)
 
-        im_confidence = ax_arr[1, i].imshow(
+        im_score_smooth = ax_arr[1, i].imshow(
+            X=smoothen(mean_scores),
+            aspect=nt/nb_c/2,
+            cmap='hot',
+        )
+        plt.colorbar(im_score_smooth, ax=ax_arr[1, i], fraction=0.0235, pad=0.04)
+
+        im_confidence = ax_arr[2, i].imshow(
             X=mean_confidences,
             aspect=nt/nb_c/2,
             cmap='Greens',
@@ -349,17 +361,17 @@ def mk_reg_selection_plot(performances: pd.DataFrame, criterion: str = 'mcc',
         msg = "selected avg score: {:.1f} / confidence: {:.1f}"
         msg = msg.format(mean_scores[a, b], mean_confidences[a, b])
         ax_arr[1, i].set_title(msg, fontsize=10)
-        plt.colorbar(im_confidence, ax=ax_arr[1, i], fraction=0.0235, pad=0.04)
+        plt.colorbar(im_confidence, ax=ax_arr[2, i], fraction=0.0235, pad=0.04)
 
-        im_above = ax_arr[2, i].imshow(
+        im_above = ax_arr[3, i].imshow(
             X=above_threshold,
             aspect=nt/nb_c/2,
             cmap='Purples',
         )
         msg = "selected reg: {} / timepoint: {:d}"
         msg = msg.format(reg_cs[a], b)
-        ax_arr[2, i].set_title(msg, fontsize=10)
-        plt.colorbar(im_above, ax=ax_arr[2, i], fraction=0.0235, pad=0.04)
+        ax_arr[3, i].set_title(msg, fontsize=10)
+        plt.colorbar(im_above, ax=ax_arr[3, i], fraction=0.0235, pad=0.04)
 
         rx = FancyBboxPatch(
             xy=(0, a),
@@ -375,21 +387,15 @@ def mk_reg_selection_plot(performances: pd.DataFrame, criterion: str = 'mcc',
         )
         r = [rx, ry]
 
-        pc = PatchCollection(r, edgecolor='dodgerblue', facecolors='None')
-        ax_arr[0, i].add_collection(pc)
-        pc = PatchCollection(r, edgecolor='dodgerblue', facecolors='None')
-        ax_arr[1, i].add_collection(pc)
-        pc = PatchCollection(r, edgecolor='dodgerblue', facecolors='None')
-        ax_arr[2, i].add_collection(pc)
-
-        for j in range(3):
-            if j == 2:
+        for j in range(4):
+            if j == 3:
                 ax_arr[j, i].set_xlabel('t (s)', fontsize=15)
                 alpha = 0.5
             else:
                 alpha = 0.3
             ax_arr[j, i].axvspan(30, 60, facecolor='lightgrey', alpha=alpha)
 
+            ax_arr[j, i].add_collection(PatchCollection(r, edgecolor='dodgerblue', facecolors='None'))
             ax_arr[j, i].set_xticks(xticks)
             ax_arr[j, i].set_xticklabels([t / 30 for t in xticks])
 
@@ -471,10 +477,12 @@ def mk_boxplots(df_all, criterion: str = 'mcc', save_file=None, display=True, fi
     ax_arr[1, 0].set_xlabel("t (s)", fontsize=11)
     ax_arr[1, 0].grid(axis='x', ls=':', lw=2)
 
+    selected_df = df_all["performances_filtered"]
+    selected_df = selected_df.loc[selected_df.metric == criterion]
     sns.boxplot(
         x="score",
         y="task",
-        data=df_all["performances_filtered"],
+        data=selected_df,
         hue="task",
         palette=list(COLORS),
         order=tasks,
@@ -491,7 +499,7 @@ def mk_boxplots(df_all, criterion: str = 'mcc', save_file=None, display=True, fi
     sns.boxplot(
         x="score",
         y="task",
-        data=df_all["performances_filtered"],
+        data=selected_df,
         hue="task",
         palette=list(COLORS),
         order=tasks,
@@ -503,7 +511,7 @@ def mk_boxplots(df_all, criterion: str = 'mcc', save_file=None, display=True, fi
         meanprops=meanprops,
         ax=ax_arr[1, 1],
     )
-    ax_arr[1, 1].set_xlim(0.6, 1)
+    ax_arr[1, 1].set_xlim(0.4, 1)
     ax_arr[1, 1].grid(axis='x', ls=':', lw=2)
 
     sns.boxplot(
@@ -994,6 +1002,164 @@ def mk_performance_plot(df, save_file=None, display=True, figsize=(24, 8), dpi=1
     return fig, ax_arr
 
 
+def mk_pie_plot(summary_data: dict, save_file=None, display=True, figsize=(18, 12), dpi=100):
+    sns.set_style('white')
+    fig, ax_arr = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
+
+    x = summary_data['trial_types_counter']
+    labels = []
+    sizes = []
+    for k, v in x.most_common():
+        if 'target' not in k:
+            labels.append(k)
+            sizes.append(v)
+    ax_arr[0].pie(sizes, labels=labels, autopct='%0.1f%%', shadow=True, startangle=90)
+
+    x = summary_data['behavior_frequencies_counter']
+    labels = []
+    sizes = []
+    for k, v in x.most_common():
+        labels.append("{} Hz".format(k))
+        sizes.append(v)
+    ax_arr[1].pie(sizes, labels=labels, autopct='%0.1f%%', shadow=True, startangle=90)
+
+    x = summary_data['passive_frequencies_counter']
+    labels = []
+    sizes = []
+    for k, v in x.most_common():
+        labels.append("{} Hz".format(k))
+        sizes.append(v)
+    ax_arr[2].pie(sizes, labels=labels, autopct='%0.1f%%', shadow=True, startangle=90)
+
+    ax_arr[0].set_title('behavior trial types', fontsize=15)
+    ax_arr[1].set_title('stim frequency (behavior)', fontsize=15)
+    ax_arr[2].set_title('stim frequency (passive)', fontsize=15)
+
+    msg = "Pie chart visualization of data"
+    sup = fig.suptitle(msg, y=0.98, fontsize=20)
+
+    save_fig(fig, sup, save_file, display)
+    return fig, ax_arr
+
+
+def mk_data_summary_plot(df, save_file=None, display=True, figsize=(18, 13), dpi=100):
+    name = df.name.unique()
+    nt = len(df.timepoint.unique())
+    xticks = range(0, nt + 1, 15)
+    tag_colors = ['deeppink', 'lightseagreen']
+
+    sns.set_style("whitegrid")
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    gs = GridSpec(nrows=4, ncols=4, height_ratios=[0.3, 0.3, 0.5, 0.5])
+
+    desired_trials = ['hit', 'miss', 'correctreject', 'falsealarm']
+    ax_list = []
+    for i, trial in tqdm(enumerate(desired_trials), total=len(desired_trials), leave=False):
+        if i == 0:
+            ax0 = fig.add_subplot(gs[0, i])
+            ax1 = fig.add_subplot(gs[1, i], sharex=ax0)
+        else:
+            ax0 = fig.add_subplot(gs[0, i], sharex=ax_list[0][0], sharey=ax_list[0][0])
+            ax1 = fig.add_subplot(gs[1, i], sharex=ax0, sharey=ax_list[0][1])
+        ax0.set_title(trial, fontsize=15)
+        ax1.set_xlabel('t (s)', fontsize=12)
+        ax1.set_xticks(xticks)
+        ax1.set_xticklabels([t / 30 for t in xticks])
+        ax_list.append([ax0, ax1])
+
+        selected_df = df.loc[df.trial == trial]
+        sns.lineplot(
+            x="timepoint",
+            y="dff",
+            data=selected_df,
+            color=COLORS[i],
+            lw=2.5,
+            ax=ax0,
+        )
+        sns.lineplot(
+            x="timepoint",
+            y="dff",
+            data=selected_df,
+            hue='cell_tag',
+            hue_order=['EXC', 'SUP'],
+            palette=tag_colors,
+            lw=2,
+            ls=':',
+            ax=ax0,
+        )
+        if trial in ['hit', 'miss']:
+            sns.lineplot(
+                x="timepoint",
+                y="target_licks",
+                data=selected_df,
+                color=COLORS[i],
+                lw=1.5,
+                ax=ax1,
+            )
+        elif trial in ['correctreject', 'falsealarm']:
+            sns.lineplot(
+                x="timepoint",
+                y="nontarget_licks",
+                data=selected_df,
+                color=COLORS[i],
+                lw=1.5,
+                ax=ax1,
+            )
+
+    axes = np.array(ax_list).T
+    for i in range(len(desired_trials)):
+        ax0, ax1 = axes[:, i]
+        ax0.set_xlabel('')
+        if i == 0:
+            ax0.set_ylabel('DFF', fontsize=12)
+            ax1.set_ylabel('licks', fontsize=12)
+        else:
+            ax0.set_ylabel('')
+            ax1.set_ylabel('')
+    for _ax in axes.flatten():
+        _ax.axvspan(30, 60, facecolor='lightgrey', alpha=0.5)
+
+    selected_df = df.loc[df.timepoint == 0]
+    ax2 = fig.add_subplot(gs[2, :])
+    sns.histplot(
+        x='trial',
+        data=selected_df,
+        hue='cell_tag',
+        hue_order=['EXC', 'SUP'],
+        palette=tag_colors,
+        multiple="dodge",
+        stat='count',
+        shrink=.6,
+        ax=ax2,
+    )
+    ax2.set_xlabel('')
+
+    ax3 = fig.add_subplot(gs[3, :], sharex=ax2)
+    sns.pointplot(
+        x='trial',
+        y='max_act',
+        data=selected_df,
+        hue='cell_tag',
+        hue_order=['EXC', 'SUP'],
+        palette=tag_colors,
+        dodge=False,
+        join=True,
+        ci='sd',
+        capsize=0.1,
+        ax=ax3,
+    )
+    ax3.set_xlabel('')
+    ax3.axhline(lw=2, color='k', ls=":")
+
+    axes = [axes, ax2, ax3]
+
+    msg = "Average DFF and lick traces across neurons for expt = '{}'".format(name.item() if len(name) == 1 else "all")
+    sup = fig.suptitle(msg, y=0.97, fontsize=17)
+
+    save_fig(fig, sup, save_file, display)
+    return fig, axes, sup
+
+
 def mk_reg_viz(df_processed, df_stats, save_file=None, display=True, figsize=(20, 8), dpi=200):
     sns.set_style('white')
     f = plt.figure(figsize=figsize, dpi=dpi)
@@ -1087,6 +1253,8 @@ def save_fig(fig, sup, save_file, display, multi=False):
             assert len(fig) == len(sup) > 1, "must provide a list of mroe than 1 figures for multi figure saving"
             with PdfPages(save_file) as pages:
                 for f, s in zip(fig, sup):
+                    if f is None:
+                        continue
                     canvas = FigureCanvasPdf(f)
                     if s is not None:
                         canvas.print_figure(pages, dpi=f.dpi, bbox_inches='tight', bbox_extra_artists=[s])

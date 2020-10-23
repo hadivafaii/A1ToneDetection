@@ -1,8 +1,7 @@
 #!/bin/bash
 
-cm=$1
-clf_type=${2:-svm}
-base_dir=${3:-null}
+nb_std=${1:-1}
+base_dir=${2:-null}
 
 if [[ $base_dir == "null" ]]; then
   if [[ $(uname -n) == "V1" ]]; then
@@ -14,6 +13,6 @@ fi
 
 cd ..
 
-python3 -m analysis.clf_process $cm --clf_type $clf_type --base_dir $base_dir --verbose
+python3 -m utils.process --nb_std $nb_std --base_dir $base_dir --verbose
 
 echo Done!

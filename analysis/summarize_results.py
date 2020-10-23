@@ -1,15 +1,14 @@
-import os
 import re
 import sys
 import argparse
-import pandas as pd
 from tqdm import tqdm
 from os.path import join as pjoin
+from .lda_analysis import LDA
 
 sys.path.append('..')
 from utils.generic_utils import get_tasks
-from utils.plot_functions import save_fig, mk_reg_selection_plot, mk_coeffs_importances_plot, mk_trajectory_plot
 from utils.animation import mk_coarse_grained_plot
+from utils.plot_functions import *
 
 
 def _setup_args() -> argparse.Namespace:
@@ -25,7 +24,7 @@ def _setup_args() -> argparse.Namespace:
         help="classifier type, choices: {'logreg', 'svm'}",
         type=str,
         choices={'logreg', 'svm'},
-        default='logreg',
+        default='svm',
     )
     parser.add_argument(
         "--nb_std",
@@ -57,6 +56,7 @@ def main():
     lda_4way_results_dir = pjoin(base_dir, 'results', 'lda', '4way')
     lda_stimfreq_results_dir = pjoin(base_dir, 'results', 'lda', 'stimfreq')
     h_load_file = pjoin(processed_dir, "organized_nb_std={:d}.h5".format(args.nb_std))
+    processed_load_dir = pjoin(processed_dir, "processed_nb_std={:d}".format(args.nb_std))
 
     available_files = os.listdir(clf_results_dir)
     print("[INFO] files found:\n{}".format(available_files))
@@ -86,6 +86,16 @@ def main():
     for name in pbar:
         pbar.set_description(name)
 
+        # page 0: avg traces
+        processed_df = pd.read_pickle(pjoin(processed_load_dir, '{}.df'.format(name)))
+        fig0, _, sup0 = mk_data_summary_plot(
+            df=processed_df,
+            save_file=None,
+            display=False,
+            figsize=(20, 20),
+            dpi=200,
+        )
+
         # page 1: reg selection
         df_p = performances.loc[performances.name == name]
         fig1, _, sup1 = mk_reg_selection_plot(
@@ -111,6 +121,7 @@ def main():
         fig3, _ = mk_trajectory_plot(
             load_dir=lda_4way_results_dir,
             global_stats=False,
+            shuffled=False,
             name=name,
             save_file=None,
             display=False,
@@ -122,6 +133,7 @@ def main():
         fig4, _ = mk_trajectory_plot(
             load_dir=lda_stimfreq_results_dir,
             global_stats=False,
+            shuffled=False,
             name=name,
             save_file=None,
             display=False,
@@ -129,8 +141,8 @@ def main():
             dpi=400,
         )
 
-        figs = [fig1, fig2, fig3, fig4]
-        sups = [sup1, sup2, None, None]
+        figs = [fig0, fig1, fig2, fig3, fig4]
+        sups = [sup0, sup1, sup2, None, None]
 
         # last 10 pages: coarse-grained for each task
         for task in tqdm(tasks, disable=not args.verbose, leave=False):
@@ -154,7 +166,7 @@ def main():
             sups.append(_sup)
 
         save_dir = pjoin(clf_results_dir, 'individual_results', name)
-        save_file = pjoin(save_dir, "summary.pdf")
+        save_file = pjoin(save_dir, "summary_{:s}.pdf".format(name))
         save_fig(figs, sups, save_file, display=False, multi=True)
 
     print("[PROGRESS] done.\n")

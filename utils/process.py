@@ -1,8 +1,9 @@
 import os
-import numpy as np
-import pandas as pd
 import h5py
 import pickle
+import argparse
+import numpy as np
+import pandas as pd
 from typing import List, Tuple
 from pathlib import Path
 from scipy.stats import zscore
@@ -10,10 +11,20 @@ from tqdm import tqdm
 from os.path import join as pjoin
 from prettytable import PrettyTable
 from collections import Counter
-from .generic_utils import merge_dicts, save_obj
+from .generic_utils import merge_dicts, save_obj, reset_df
 import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_style('darkgrid')
+
+
+def combine_dfs(load_dir: str) -> pd.DataFrame:
+    df_all = []
+    for file_name in tqdm(os.listdir(load_dir)):
+        with open(pjoin(load_dir, file_name)) as f:
+            df = pd.read_pickle(f.name)
+            df_all.append(df)
+    df_all = pd.concat(df_all)
+    return reset_df(df_all)
 
 
 def summarize_data(load_file: str, save_file: str = None):
@@ -174,17 +185,23 @@ def summarize_data(load_file: str, save_file: str = None):
             file.write(msg)
             file.write(t_passive_detailed.get_string())
 
+    summary_data = {
+        'trial_types_counter': trial_types_counter,
+        'behavior_frequencies_counter': behavior_frequencies_counter,
+        'passive_frequencies_counter': passive_frequencies_counter,
+        'behavior_stimlevel_counter': behavior_stimlevel_counter,
+        'passive_stimlevel_counter': passive_stimlevel_counter,
+    }
+    return summary_data
 
-def process_data(
-        load_file: str,
-        save_dir: str,
-        file_name: str,
-        normalize: bool = False,) -> dict:
 
+def process_data(load_file: str, save_dir: str, normalize: bool = False):
+    os.makedirs(save_dir, exist_ok=True)
     f = h5py.File(load_file, 'r')
+    pbar = tqdm(f, dynamic_ncols=True)
 
-    dictdata_list = []
-    for name in tqdm(f):
+    for name in pbar:
+        pbar.set_description(name)
         behavior = f[name]['behavior']
         dff = np.array(behavior['dff'], dtype=float)
         targetlick = np.array(behavior['targetlick'], dtype=int)
@@ -197,9 +214,34 @@ def process_data(
         if normalize:
             dff_good = zscore(dff_good)
 
+        dictdata_list = []
         for k, v in behavior['trial_info'].items():
             trial_data = np.array(v, dtype=int)
             trial_size = sum(trial_data == 1)
+            if not trial_size:
+                continue
+
+            dff = dff_good[:, trial_data == 1, :]
+            max_activation_list = []
+            cell_tag_list = []
+            for cell in range(nc):
+                max_act = max(dff[..., cell].mean(1), key=abs)
+                max_activation_list.append(max_act)
+                if max_act >= 0:
+                    tag = "EXC"
+                else:
+                    tag = "SUP"
+                cell_tag_list.append(tag)
+
+            max_activations = np.expand_dims(max_activation_list, 0)
+            max_activations = np.expand_dims(max_activations, 0)
+            max_activations = np.repeat(max_activations, trial_size, axis=1)
+            max_activations = np.repeat(max_activations, nt, axis=0)
+
+            cell_tags = np.expand_dims(cell_tag_list, 0)
+            cell_tags = np.expand_dims(cell_tags, 0)
+            cell_tags = np.repeat(cell_tags, trial_size, axis=1)
+            cell_tags = np.repeat(cell_tags, nt, axis=0)
 
             time_points = np.expand_dims(np.arange(nt), -1)
             time_points = np.expand_dims(time_points, -1)
@@ -223,35 +265,42 @@ def process_data(
                 "name": [name] * nt * trial_size * nc,
                 "timepoint": time_points.flatten(),
                 "cell_indx": cell_indxs.flatten(),
+                "cell_tag": cell_tags.flatten(),
+                "max_act": max_activations.flatten(),
                 "trial": [k] * nt * trial_size * nc,
-                "dff": dff_good[:, trial_data == 1, :].flatten(),
+                "dff": dff.flatten(),
                 "target_licks": target_licks.flatten(),
                 "nontarget_licks": nontarget_licks.flatten(),
             }
             dictdata_list.append(data_dict)
+        df = pd.DataFrame.from_dict(merge_dicts(dictdata_list))
+        save_obj(data=df, file_name="{}.df".format(name), save_dir=save_dir, mode='df', verbose=True)
     f.close()
-
-    os.makedirs(save_dir, exist_ok=True)
-    save_obj(
-        data=pd.DataFrame.from_dict(merge_dicts(dictdata_list)),
-        file_name=file_name, save_dir=save_dir, mode='df', verbose=True,
-    )
-    del dictdata_list
-
-    print('[PROGRESS] processing done.\n\n')
+    print('[PROGRESS] processing done.')
 
 
-def organize_data(base_dir: str, file_name: str = "processed_data.h5", nb_std: int = 1):
+def organize_data(base_dir: str, nb_std: int = 1):
     data_dir = pjoin(base_dir, 'Data')
     processed_dir = pjoin(base_dir, 'python_processed')
+    os.makedirs(processed_dir, exist_ok=True)
+    file_name = "organized_nb_std={:d}.h5".format(nb_std)
 
     save_file = pjoin(processed_dir, file_name)
-    h5_file = h5py.File(save_file, 'w')
+    if os.path.isfile(save_file):
+        print('[INFO] file found. exiting...\n\n')
+        return
+    else:
+        print('[INFO] file not found. organizing...\n\n')
 
+    _corrupted_expts = ["ken_2016-09-30"]
+    h5_file = h5py.File(save_file, 'w')
     for path in tqdm(Path(data_dir).rglob('*.pkl')):
         file = str(path)
         data = pickle.load(open(file, "rb"))
         name = "{:s}_{:s}".format(data[0]["name"], data[0]["date"]).lower()
+        if name in _corrupted_expts:
+            continue
+
         grp = h5_file.create_group(name)
         behavior_grp = grp.create_group("behavior")
         passive_grp = grp.create_group("passive")
@@ -397,3 +446,45 @@ def plot_outlier_removal(
     plt.close()
 
     return len(outlier_indxs), len(nonnan_bright_indxs)
+
+
+def _setup_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--nb_std",
+        help="outlier removal threshold",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--verbose",
+        help="verbosity",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--base_dir",
+        help="base dir where project is saved",
+        type=str,
+        default='Documents/PROJECTS/Kanold',
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    args = _setup_args()
+
+    base_dir = pjoin(os.environ['HOME'], args.base_dir)
+    organize_data(base_dir=base_dir, nb_std=args.nb_std)
+
+    processed_dir = pjoin(base_dir, 'python_processed')
+    save_dir = pjoin(processed_dir, "processed_nb_std={:d}".format(args.nb_std))
+    h_load_file = pjoin(processed_dir, "organized_nb_std={:d}.h5".format(args.nb_std))
+    process_data(load_file=h_load_file, save_dir=save_dir, normalize=False)
+
+    print("[PROGRESS] done.\n")
+
+
+if __name__ == "__main__":
+    main()

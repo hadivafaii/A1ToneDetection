@@ -13,6 +13,20 @@ from typing import List, Dict, Any
 from tqdm import tqdm
 
 
+def smoothen(arr: np.ndarray, filter_sz: int = 5):
+    shape = arr.shape
+    assert 1 <= len(shape) <= 2, "1<= dim <= 2d"
+
+    kernel = np.ones(filter_sz) / filter_sz
+    if len(shape) == 1:
+        return np.convolve(arr, kernel, mode='same')
+    else:
+        smoothed = np.zeros(arr.shape)
+        for i in range(arr.shape[0]):
+            smoothed[i] = np.convolve(arr[i], kernel, mode='same')
+        return smoothed
+
+
 def downsample(data, xy, xbins, ybins, normalize=True):
     xbins = sorted(xbins)
     ybins = sorted(ybins)
@@ -71,17 +85,17 @@ def reset_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def save_obj(data: Any, file_name: str, save_dir: str, mode: str = 'np', verbose: bool = True):
+def save_obj(obj: Any, file_name: str, save_dir: str, mode: str = 'np', verbose: bool = True):
     _allowed_modes = ['np', 'df', 'pkl', 'joblib']
     with open(pjoin(save_dir, file_name), 'wb') as f:
         if mode == 'np':
-            np.save(f.name, data)
+            np.save(f.name, obj)
         elif mode == 'df':
-            pd.to_pickle(data, f)
+            pd.to_pickle(obj, f)
         elif mode == 'pkl':
-            pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
         elif mode == 'joblib':
-            joblib.dump(data, f)
+            joblib.dump(obj, f)
         else:
             raise RuntimeError("invalid mode encountered, available options: {}".format(_allowed_modes))
     if verbose:
