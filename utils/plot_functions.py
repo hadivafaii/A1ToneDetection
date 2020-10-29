@@ -2,11 +2,10 @@ import os
 import pickle
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 from os.path import join as pjoin
 
 from matplotlib.lines import Line2D
-from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import FancyBboxPatch, BoxStyle
 from matplotlib.collections import PatchCollection
@@ -22,16 +21,54 @@ COLORMAPS = ["Blues", "Oranges", "Greens", "Reds", "Purples",
 sns.set_style('white')
 
 
-def mk_trajectory_plot(load_dir: str, global_stats: bool = False, shuffled: bool = False, name: str = None,
+def mk_lda_summary_plot(load_dir: str, save_file=None, display=True, figsize=(16, 4), dpi=100):
+    summary = pd.DataFrame()
+    for dim in [1, 2, 3]:
+        results = pd.read_pickle(pjoin(load_dir, 'results_{:d}d.df'.format(dim)))
+        best_t = results.best_t_global.unique().item()
+
+        df = results.loc[results.timepoint == best_t]
+        score = [df.performance, df.sb, df.sw, df.J]
+        score = [item.to_numpy() for item in score]
+        score = np.concatenate(score)
+
+        data_dict = {
+            'metric': np.repeat(['performance', 'sb', 'sw', 'J'], len(df)),
+            'score': score,
+            'dim': [dim] * len(score),
+        }
+        summary = pd.concat([summary, pd.DataFrame.from_dict(data_dict)])
+    summary = reset_df(summary)
+    metrics = summary.metric.unique().tolist()
+
+    sns.set_style('whitegrid')
+    fig, ax_arr = plt.subplots(1, 4, figsize=figsize, dpi=dpi)
+
+    for i, metric in enumerate(metrics):
+        selected_df = summary.loc[summary.metric == metric]
+        sns.barplot(data=selected_df, y='score', x='metric', hue='dim', ax=ax_arr[i])
+        ax_arr[i].set_xlabel(metric, fontsize=15)
+        ax_arr[i].set_ylabel('')
+        ax_arr[i].set_xticks([])
+
+    msg = "LDA result comparison: 1D, 2D, and 3D. reporting 'mcc' score for classification\n"
+    msg += "sb = scatter between,  sw = scatter within groups,  J = sb / sw"
+    sup = fig.suptitle(msg, fontsize=17, y=1.07)
+
+    save_fig(fig, sup, save_file, display)
+    return fig, ax_arr, sup
+
+
+def mk_trajectory_plot(load_dir: str, dim: int, global_stats: bool = False, shuffled: bool = False, name: str = None,
                        save_file=None, display=True, figsize=(12, 14), dpi=600):
 
     # load data
     fit_metadata = np.load(pjoin(load_dir, 'fit_metadata.npy'), allow_pickle=True).item()
-    file_name = 'results_shuffled.df' if shuffled else 'results.df'
-    results = pd.read_pickle(pjoin(load_dir, file_name))
+    file_name = 'results_{:d}d_shuffled.df' if shuffled else 'results_{:d}d.df'
+    results = pd.read_pickle(pjoin(load_dir, file_name.format(dim)))
 
-    file_name = 'extras_shuffled.pkl' if shuffled else 'extras.pkl'
-    with open(pjoin(load_dir, file_name), 'rb') as handle:
+    file_name = 'extras_{:d}d_shuffled.pkl' if shuffled else 'extras_{:d}d.pkl'
+    with open(pjoin(load_dir, file_name.format(dim)), 'rb') as handle:
         extras = pickle.load(handle)
 
     # sample experiment
@@ -56,7 +93,7 @@ def mk_trajectory_plot(load_dir: str, global_stats: bool = False, shuffled: bool
     lbls = extras[name].Y
     clfs = extras[name].clfs
 
-    proj_mat = clfs[best_t].scalings_[:, :3]
+    proj_mat = clfs[best_t].scalings_[:, :dim]
     z = x_mat @ proj_mat
 
     trajectory_dict = {lbl: z[:, lbls == idx, :] for lbl, idx in l2i.items()}
@@ -66,7 +103,7 @@ def mk_trajectory_plot(load_dir: str, global_stats: bool = False, shuffled: bool
 
     sns.set_style('whitegrid')
     fig = plt.figure(figsize=figsize, dpi=dpi)
-    gs = GridSpec(nrows=2, ncols=3, height_ratios=[1, 4.3])
+    gs = GridSpec(nrows=2, ncols=3, height_ratios=[1, 3] if dim == 1 else [1, 4.3])
 
     ax0 = fig.add_subplot(gs[0, 0])
     ax1 = fig.add_subplot(gs[0, 1], sharex=ax0)
@@ -84,7 +121,7 @@ def mk_trajectory_plot(load_dir: str, global_stats: bool = False, shuffled: bool
     else:
         df = results.loc[results.name == name]
     sns.lineplot(data=df, y='performance', x='timepoint', color='k', ax=ax0, lw=3)
-    sns.lineplot(data=df, y='distance', x='timepoint', color='orangered', ax=ax1, lw=3)
+    sns.lineplot(data=df, y='J', x='timepoint', color='orangered', ax=ax1, lw=3)
     sns.lineplot(data=df, y='sb', x='timepoint', color='royalblue', ax=ax2, lw=3)
 
     ax0.set_ylabel('')
@@ -100,52 +137,135 @@ def mk_trajectory_plot(load_dir: str, global_stats: bool = False, shuffled: bool
     ax1.set_xticklabels([t / 30 for t in xticks])
     ax2.set_xticklabels([t / 30 for t in xticks])
     ax0.set_title("performance (mcc)", fontsize=15)
-    ax1.set_title("distance", fontsize=15)
-    ax2.set_title("scatter matrix between classes", fontsize=15)
+    ax1.set_title("J = Sb / Sw", fontsize=15)
+    ax2.set_title("scatter matrix between classes (Sb)", fontsize=15)
     ax2.legend(loc='lower right')
 
-    # 3d scatter
-    ax = fig.add_subplot(gs[1, :], projection='3d')
+    # traj plot
+    fig, ax = _traj_plot(dim, fig, gs, i2l, trajectory_dict, best_t)
+    if dim in [2, 3]:
+        if global_stats:
+            msg = "representative tarajectory:\n\n name = {}\n t = 0 . . .  {:d} (best t)"
+        else:
+            msg = "name = {}\n t = 0 . . .  {:d} (best t)"
+        msg = msg.format(name, best_t)
+        ax.set_title(msg, fontsize=17)
 
-    smin = 10
-    smax = 1000
-    markers = ['o', 'v', '^', 's']
-    legend_elements = []
-    for idx, lbl in i2l.items():
-        tau = trajectory_dict[lbl]
-        mu = tau.mean(1)[:best_t]
+    elif dim == 1:
+        ax.axvline(best_t, color='magenta' if global_stats else 'limegreen', ls='--', lw=2)
+        ax.axvspan(30, 60, facecolor='lightgrey', alpha=0.5, zorder=0)
+        ax.set_xlabel('t (s)', fontsize=15)
+        ax.set_xticks(xticks)
+        ax.set_xticklabels([t / 30 for t in xticks])
 
-        sigma = np.linalg.norm(tau - tau.mean(1, keepdims=True), axis=-1).mean(-1)
-        a = (smax - smin) / (max(sigma) - min(sigma))
-        b = smin - a * min(sigma)
-        scale = a * sigma + b
-
-        ax.plot(mu[:, 0], mu[:, 1], mu[:, 2], color=COLORS[idx], lw=3, alpha=0.5)
-        # core
-        ax.scatter(
-            mu[:, 0], mu[:, 1], mu[:, 2], alpha=1,
-            marker=markers[idx], s=50, label=lbl, cmap=COLORMAPS[idx], c=range(best_t))
-        # shadow
-        ax.scatter(
-            mu[:, 0], mu[:, 1], mu[:, 2], alpha=0.2,
-            marker=markers[idx], s=scale[:best_t], cmap=COLORMAPS[idx], c=range(best_t))
-        # legend
-        legend_elements.append(Line2D(
-            [0], [0], marker=markers[idx], color='w', label=lbl,
-            markerfacecolor=COLORS[idx], markersize=15))
-
-    ax.legend(handles=legend_elements, loc='upper left', fontsize='large')
-
-    if global_stats:
-        msg = "representative tarajectory:\n\n name = {}\n t = 0 . . .  {:d} (best t)"
     else:
-        msg = "name = {}\n t = 0 . . .  {:d} (best t)"
-    msg = msg.format(name, best_t)
-    ax.set_title(msg, fontsize=17)
+        raise RuntimeError("invalid dim encountered: {}, valid options: [1, 2, 3]".format(dim))
 
     fig.tight_layout()
     save_fig(fig, None, save_file, display)
     return fig, np.array([ax0, ax1, ax2, ax])
+
+
+def _traj_plot(dim, fig, gs, i2l, trajectory_dict, best_t):
+    if dim in [2, 3]:
+        from mpl_toolkits.mplot3d import Axes3D
+        ax = fig.add_subplot(gs[1, :], projection='3d' if dim == 3 else None)
+
+        smin = 10
+        smax = 1000
+        markers = ['o', 'v', '^', 's']
+        legend_elements = []
+        for idx, lbl in i2l.items():
+            tau = trajectory_dict[lbl]
+            mu = tau.mean(1)[:best_t]
+
+            sigma = np.linalg.norm(tau - tau.mean(1, keepdims=True), axis=-1).mean(-1)
+            a = (smax - smin) / (max(sigma) - min(sigma))
+            b = smin - a * min(sigma)
+            scale = a * sigma + b
+
+            if dim == 3:
+                ax.plot(mu[:, 0], mu[:, 1], mu[:, 2], color=COLORS[idx], lw=3, alpha=0.5)
+            else:
+                ax.plot(mu[:, 0], mu[:, 1], color=COLORS[idx], lw=3, alpha=0.5)
+
+            # core
+            if dim == 3:
+                ax.scatter(
+                    mu[:, 0],
+                    mu[:, 1],
+                    mu[:, 2],
+                    alpha=1,
+                    marker=markers[idx],
+                    s=50,
+                    label=lbl,
+                    cmap=COLORMAPS[idx],
+                    c=range(best_t),
+                )
+            else:
+                ax.scatter(
+                    mu[:, 0],
+                    mu[:, 1],
+                    alpha=1,
+                    marker=markers[idx],
+                    s=50,
+                    label=lbl,
+                    cmap=COLORMAPS[idx],
+                    c=range(best_t),
+                )
+
+            # shadow
+            if dim == 3:
+                ax.scatter(
+                    mu[:, 0],
+                    mu[:, 1],
+                    mu[:, 2],
+                    alpha=0.2,
+                    marker=markers[idx],
+                    s=scale[:best_t],
+                    cmap=COLORMAPS[idx],
+                    c=range(best_t),
+                )
+            else:
+                ax.scatter(
+                    mu[:, 0],
+                    mu[:, 1],
+                    alpha=0.2,
+                    marker=markers[idx],
+                    s=scale[:best_t],
+                    cmap=COLORMAPS[idx],
+                    c=range(best_t),
+                )
+
+            # legend
+            legend_elements.append(Line2D(
+                [0], [0], marker=markers[idx], color='w', label=lbl,
+                markerfacecolor=COLORS[idx], markersize=15))
+        ax.legend(handles=legend_elements, loc='upper left' if dim == 3 else 'best', fontsize='large')
+
+    elif dim == 1:
+        traj_df = pd.DataFrame()
+        for k, v in trajectory_dict.items():
+            nt, ntrials, _ = v.shape
+
+            timepoint = np.arange(nt)
+            timepoint = np.expand_dims(timepoint, axis=-1)
+            timepoint = np.repeat(timepoint, ntrials)
+
+            data_dict = {
+                'label': [k] * nt * ntrials,
+                'timepoint': timepoint.flatten(),
+                'traj': v.flatten(),
+            }
+            traj_df = pd.concat([traj_df, pd.DataFrame.from_dict(data_dict)])
+        ax = fig.add_subplot(gs[1, :])
+        sns.lineplot(data=traj_df, x='timepoint', y='traj', hue='label', lw=3, ax=ax)
+        ax.lines[2].set_linestyle("--")
+        ax.lines[3].set_linestyle("--")
+    else:
+        raise RuntimeError("invalid dim encountered: {}, valid options: [1, 2, 3]".format(dim))
+
+    return fig, ax
 
 
 def mk_coeffs_importances_plot(coeffs_filtered, save_file=None, display=True, figsize=(67, 13), dpi=200):

@@ -56,22 +56,24 @@ def run_lda_analysis(
     save_obj(fit_metadata, 'fit_metadata.npy', save_dir, 'np')
 
     for shuffle_labels in [False, True]:
-        results, lda_dict = _lda(load_file, shrinkage, xv_fold, lbl2idx, idx2lbl, rng, shuffle_labels, verbose)
+        for dim in [1, 2, 3]:
+            results, lda_dict = _lda(load_file, shrinkage, dim, xv_fold, lbl2idx, idx2lbl, rng, shuffle_labels, verbose)
 
-        # save
-        file_name = 'results_shuffled.df' if shuffle_labels else 'results.df'
-        save_obj(results, file_name, save_dir, 'df', verbose)
-        file_name = 'extras_shuffled.pkl' if shuffle_labels else 'extras.pkl'
-        save_obj(lda_dict, file_name, save_dir, 'pkl', verbose)
+            # save
+            file_name = 'results_{:d}d_shuffled.df' if shuffle_labels else 'results_{:d}d.df'
+            save_obj(results, file_name.format(dim), save_dir, 'df', verbose)
+            file_name = 'extras_{:d}d_shuffled.pkl' if shuffle_labels else 'extras_{:d}d.pkl'
+            save_obj(lda_dict, file_name.format(dim), save_dir, 'pkl', verbose)
 
 
-def _lda(load_file, shrinkage, xv_fold, lbl2idx, idx2lbl, rng, shuffle_labels, verbose):
+def _lda(load_file, shrinkage, dim, xv_fold, lbl2idx, idx2lbl, rng, shuffle_labels, verbose):
     lda_dict = {}
     results_dictlist = []
     h5_file = h5py.File(load_file, "r")
     pbar = tqdm(h5_file, dynamic_ncols=True, disable=not verbose)
     for name in pbar:
-        pbar.set_description("{}, shuffle = {}".format(name, shuffle_labels))
+        msg = "shuffled, {:d}d, {}" if shuffle_labels else "{:d}d, {}"
+        pbar.set_description(msg.format(dim, name))
         behavior = h5_file[name]["behavior"]
         trial_info_grp = behavior["trial_info"]
 
@@ -115,7 +117,7 @@ def _lda(load_file, shrinkage, xv_fold, lbl2idx, idx2lbl, rng, shuffle_labels, v
             continue
 
         performance = np.zeros(nt)
-        embedded = np.zeros((nt, len(vld_indxs), 3))
+        embedded = np.zeros((nt, len(vld_indxs), dim))
 
         _clfs = {}
         for t in tqdm(range(nt), leave=False, disable=not verbose):
@@ -128,7 +130,7 @@ def _lda(load_file, shrinkage, xv_fold, lbl2idx, idx2lbl, rng, shuffle_labels, v
                         break
                 y_trn = y_shuffled
             clf = LinearDiscriminantAnalysis(
-                n_components=3,
+                n_components=dim,
                 solver='eigen',
                 shrinkage=shrinkage,
             ).fit(x_trn, y_trn)

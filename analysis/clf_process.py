@@ -55,7 +55,7 @@ def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bo
     time_now = now(exclude_hour_min=True)
 
     save_obj(
-        data=pd.DataFrame.from_dict(coeffs),
+        obj=pd.DataFrame.from_dict(coeffs),
         file_name="coeffs_{:s}.df".format(time_now),
         save_dir=run_dir,
         mode='df',
@@ -63,7 +63,7 @@ def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bo
     )
     del coeffs
     save_obj(
-        data=pd.DataFrame.from_dict(performances),
+        obj=pd.DataFrame.from_dict(performances),
         file_name="performances_{:s}.df".format(time_now),
         save_dir=run_dir,
         mode='df',
@@ -71,7 +71,7 @@ def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bo
     )
     del performances
     save_obj(
-        data=pd.DataFrame.from_dict(performances_filtered),
+        obj=pd.DataFrame.from_dict(performances_filtered),
         file_name="performances_filtered_{:s}.df".format(time_now),
         save_dir=run_dir,
         mode='df',
@@ -96,11 +96,14 @@ def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bo
                 "must have non-overlapping keys by design"
             classifiers.update(_classifiers)
 
-    coeffs_filtered = _compute_feature_importances(coeffs_filtered, classifiers)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        coeffs_filtered = _compute_feature_importances(coeffs_filtered, classifiers)
 
     # save
     save_obj(
-        data=pd.DataFrame.from_dict(coeffs_filtered),
+        obj=pd.DataFrame.from_dict(coeffs_filtered),
         file_name="coeffs_filtered_{:s}.df".format(time_now),
         save_dir=run_dir,
         mode='df',
@@ -183,6 +186,9 @@ def _filter(performances: dict, coeffs: dict, verbose: bool = True) -> Tuple[dic
            (performances['timepoint'] == performances['best_timepoint'])
     performances_filtered = {k: v[cond] for k, v in performances.items()}
 
+    if not len(coeffs):
+        return performances_filtered, coeffs
+
     # do coeffs
     names = list(np.unique(performances['name']))
     tasks = list(np.unique(performances['task']))
@@ -245,15 +251,17 @@ def _detect_best_reg_timepoint(
             mean_confidences = confidences.mean(1)
 
             max_score = np.max(mean_scores[:, start_time:])
-            above_threshold_bool = mean_scores > (threshold * max_score)
-            above_threshold = mean_scores.copy()
-            above_threshold[~above_threshold_bool] = 0
 
-            a = min(np.unique(np.where(above_threshold_bool[:, start_time:])[0]), key=lambda x: reg_cs[x])
-            max_confidences = mean_confidences * above_threshold_bool
-            b = np.argmax(max_confidences[a][start_time:]) + start_time
+            if max_score <= 0.0:
+                a, b = 0, 0
+            else:
+                lower_bound = threshold * max_score
+                above_threshold = mean_scores > lower_bound
 
-            assert mean_scores[a, b] > (threshold * max_score), "must select max score"
+                a = min(np.unique(np.where(above_threshold[:, start_time:])[0]), key=lambda x: reg_cs[x])
+                max_confidences = mean_confidences * above_threshold
+                b = np.argmax(max_confidences[a][start_time:]) + start_time
+                assert mean_scores[a, b] > lower_bound, "must select max score"
 
             best_reg[cond] = reg_cs[a]
             best_timepoint[cond] = b
@@ -268,6 +276,9 @@ def _detect_best_reg_timepoint(
 
 
 def _compute_feature_importances(coeffs_filtered: dict, classifiers: dict, verbose: bool = True) -> dict:
+    if not len(coeffs_filtered):
+        return coeffs_filtered
+
     names = np.unique(coeffs_filtered['name']).tolist()
     tasks = np.unique(coeffs_filtered['task']).tolist()
     seeds = np.unique(coeffs_filtered['seed']).tolist()
@@ -319,7 +330,7 @@ def _setup_args() -> argparse.Namespace:
         "--clf_type",
         help="classifier type, choices: {'logreg', 'svm'}",
         type=str,
-        choices={'logreg', 'svm'},
+        choices={'logreg', 'svm', 'mlp'},
         default='svm',
     )
     parser.add_argument(
@@ -352,10 +363,7 @@ def main():
     run_dir = pjoin(results_dir, args.clf_type, args.cm)
 
     # combine fits together
-    import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        combine_results(run_dir, args.regs_to_include, verbose=args.verbose)
+    combine_results(run_dir, args.regs_to_include, verbose=args.verbose)
 
     print("[PROGRESS] done.\n")
 

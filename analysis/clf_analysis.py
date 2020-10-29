@@ -10,12 +10,16 @@ from typing import List, Dict
 from os.path import join as pjoin
 
 from sklearn.svm import LinearSVC
+from sklearn.neural_network import MLPClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import matthews_corrcoef, accuracy_score, f1_score
 
 sys.path.append('..')
 from utils.generic_utils import now, merge_dicts, save_obj, get_tasks
 from .clf_process import combine_fits
+
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 def run_classification_analysis(
@@ -27,16 +31,17 @@ def run_classification_analysis(
         xv_fold: int = 5,
         save_to_pieces: bool = False,
         verbose: bool = True,
-        **kwargs: Dict[str, str], ) -> dict:
-    _allowed_clf_types = ['logreg', 'svm']
+        **kwargs, ) -> dict:
+    _allowed_clf_types = ['logreg', 'svm', 'mlp']
 
     if not isinstance(seeds, list):
         seeds = [seeds]
 
     classifier_args = {
+        'hidden_size': 10,
         'clf_type': 'logreg',
         'penalty': 'l1',
-        'C': 1.0,
+        'C': 0.1,
         'tol': 1e-4,
         'class_weight': 'balanced',
         'solver': 'liblinear',
@@ -143,6 +148,8 @@ def run_classification_analysis(
                                 max_iter=classifier_args['max_iter'],
                                 random_state=random_state,
                             ).fit(x_trn, y_trn)
+                            confidence = clf.decision_function(x_vld)
+
                         elif classifier_args['clf_type'] == 'svm':
                             clf = LinearSVC(
                                 penalty=classifier_args['penalty'],
@@ -153,6 +160,21 @@ def run_classification_analysis(
                                 max_iter=classifier_args['max_iter'],
                                 random_state=random_state,
                             ).fit(x_trn, y_trn)
+                            confidence = clf.decision_function(x_vld)
+
+                        elif classifier_args['clf_type'] == 'mlp':
+                            clf = MLPClassifier(
+                                hidden_layer_sizes=(classifier_args['hidden_size'],),
+                                alpha=classifier_args['C'],
+                                tol=classifier_args['tol'],
+                                solver=classifier_args['solver'],
+                                max_iter=classifier_args['max_iter'],
+                                random_state=random_state,
+                            )
+                            clf.fit(x_trn, y_trn)
+                            probabilities = clf.predict_proba(x_vld)
+                            confidence = np.array([pr[idx] for pr, idx in zip(probabilities, y_vld)])
+
                         else:
                             msg = "invalid classifier type encountered: {:s}, valid options are: {}"
                             msg = msg.format(classifier_args['clf_type'], _allowed_clf_types)
@@ -175,30 +197,28 @@ def run_classification_analysis(
                     mcc_all[time_point] = matthews_corrcoef(y_vld, y_pred)
                     accuracy_all[time_point] = accuracy_score(y_vld, y_pred)
                     f1_all[time_point] = f1_score(y_vld, y_pred)
-
-                    confidence = clf.decision_function(x_vld)
                     confidence_all[time_point] = sum(abs(confidence[y_vld == y_pred]))
 
-                    coeffs = clf.coef_.squeeze()
-                    nb_nonzero = sum(coeffs != 0.0)
-
-                    data_dict = {
-                        'name': [expt] * nc,
-                        'seed': [random_state] * nc,
-                        'task': [task] * nc,
-                        'reg_C': [classifier_args['C']] * nc,
-                        'timepoint': [time_point] * nc,
-                        'cell_indx': range(nc),
-                        'coeffs': coeffs,
-                        'nb_nonzero': [nb_nonzero] * nc,
-                        'percent_nonzero': [nb_nonzero / nc * 100] * nc,
-                        'x': xy[:, 0],
-                        'y': xy[:, 1],
-                    }
-                    if save_to_pieces:
-                        save_obj(data_dict, '{:09d}.npy'.format(counter), coeffs_dir, 'np', verbose=False)
-                    else:
-                        coeffs_dict_list.append(data_dict)
+                    if classifier_args['clf_type'] in ['logreg', 'svm']:
+                        coeffs = clf.coef_.squeeze()
+                        nb_nonzero = sum(coeffs != 0.0)
+                        data_dict = {
+                            'name': [expt] * nc,
+                            'seed': [random_state] * nc,
+                            'task': [task] * nc,
+                            'reg_C': [classifier_args['C']] * nc,
+                            'timepoint': [time_point] * nc,
+                            'cell_indx': range(nc),
+                            'coeffs': coeffs,
+                            'nb_nonzero': [nb_nonzero] * nc,
+                            'percent_nonzero': [nb_nonzero / nc * 100] * nc,
+                            'x': xy[:, 0],
+                            'y': xy[:, 1],
+                        }
+                        if save_to_pieces:
+                            save_obj(data_dict, '{:09d}.npy'.format(counter), coeffs_dir, 'np', verbose=False)
+                        else:
+                            coeffs_dict_list.append(data_dict)
 
                     msg = "name: {}, seed: {}, task: {}, t: {}, "
                     msg = msg.format(expt, random_state, task, time_point)
@@ -269,7 +289,8 @@ def run_classification_analysis(
 
 def _mk_save_dirs(cm: str, results_dir: str, classifier_args: Dict[str, str], verbose: bool = True):
     c_dir = "{}".format(classifier_args['C'])
-    save_dir = pjoin(results_dir, classifier_args['clf_type'], cm, c_dir)
+    comment = classifier_args['hidden_size'] if classifier_args['clf_type'] == 'mlp' else cm
+    save_dir = pjoin(results_dir, classifier_args['clf_type'], str(comment), c_dir)
     os.makedirs(save_dir, exist_ok=True)
 
     coeffs_dir = pjoin(save_dir, '_coeffs')
@@ -325,8 +346,14 @@ def _setup_args() -> argparse.Namespace:
         "--clf_type",
         help="classifier type, choices: {'logreg', 'svm'}",
         type=str,
-        choices={'logreg', 'svm'},
-        default='logreg',
+        choices={'logreg', 'svm', 'mlp'},
+        default='svm',
+    )
+    parser.add_argument(
+        "--hidden_size",
+        help="hidden size, only when using mlp",
+        type=int,
+        default=10,
     )
     parser.add_argument(
         "--penalty",
@@ -351,8 +378,8 @@ def _setup_args() -> argparse.Namespace:
         "--solver",
         help="choices: {'newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga'}",
         type=str,
-        choices={'newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga'},
-        default='liblinear',
+        choices={'liblinear', 'lbfgs', 'auto'},
+        default='auto',
     )
     parser.add_argument(
         "--tol",
@@ -394,6 +421,8 @@ def _setup_args() -> argparse.Namespace:
 
 def main():
     args = _setup_args()
+    if args.solver == 'auto':
+        args.solver = 'liblinear' if args.clf_type in ['logreg', 'svm'] else 'lbfgs'
 
     base_dir = pjoin(os.environ['HOME'], args.base_dir)
     results_dir = pjoin(base_dir, 'results')
@@ -402,9 +431,6 @@ def main():
 
     tasks = get_tasks()
     seeds = [np.power(2, i) for i in range(args.nb_seeds)]
-
-    import warnings
-    warnings.filterwarnings("ignore", category=RuntimeWarning)
 
     # fit models
     fit_metadata = run_classification_analysis(
@@ -421,6 +447,7 @@ def main():
         C=args.C,
         solver=args.solver,
         tol=args.tol,
+        hidden_size=args.hidden_size,
         max_iter=args.max_iter,
     )
 

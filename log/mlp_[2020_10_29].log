@@ -1,0 +1,12 @@
+2020-10-29 00:49:03,080 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.0001, task = hit/falsealarm
+2020-10-29 00:49:04,898 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.0001, task = miss/falsealarm
+2020-10-29 00:49:04,898 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 0.0001, task = correctreject/falsealarm
+2020-10-29 00:49:11,717 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 1e-06, task = hit/falsealarm
+2020-10-29 00:49:13,607 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 1e-06, task = miss/falsealarm
+2020-10-29 00:49:13,607 : INFO : __main__ : no samples found, name = james_2018-09-20, seed = 1, C = 1e-06, task = correctreject/falsealarm
+2020-10-29 00:52:50,465 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.0001, task = hit/miss
+2020-10-29 00:52:53,256 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.0001, task = miss/correctreject
+2020-10-29 00:52:53,257 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 0.0001, task = miss/falsealarm
+2020-10-29 00:53:00,541 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 1e-06, task = hit/miss
+2020-10-29 00:53:03,384 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 1e-06, task = miss/correctreject
+2020-10-29 00:53:03,384 : INFO : __main__ : no samples found, name = ken_2016-08-18, seed = 1, C = 1e-06, task = miss/falsealarm
