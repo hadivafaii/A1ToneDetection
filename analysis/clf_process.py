@@ -11,12 +11,18 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import matthews_corrcoef, make_scorer
 
 sys.path.append('..')
-from utils.generic_utils import now, rm_dirs, merge_dicts, save_obj, smoothen
+from utils.generic_utils import now, isfloat, rm_dirs, merge_dicts, save_obj, smoothen
 
 
-def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bool = True):
+def combine_results(
+        run_dir: str,
+        reg_detection_args: dict,
+        regs_to_include: List[str] = None,
+        verbose: bool = True,):
     # sorts in increasing C value or: decreasing reg strength
-    runs = sorted(os.listdir(run_dir), key=lambda c: float(c))
+    runs = next(os.walk(run_dir))[1]    # get all dirs
+    runs = list(filter(isfloat, runs))  # filter out nonfloat
+    runs = sorted(runs, key=lambda c: float(c))
     if regs_to_include is not None:
         if not isinstance(regs_to_include, list):
             regs_to_include = [regs_to_include]
@@ -49,15 +55,19 @@ def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bo
     performances = merge_dicts(performances_dictlist, verbose)
 
     performances, performances_filtered, coeffs_filtered = _porocess_results(
-        performances, coeffs, verbose)
+        performances, coeffs, reg_detection_args, verbose)
 
     # save
     time_now = now(exclude_hour_min=True)
+    save_dir = "time[{:d}:{:d}]_filter{:d}_thres{}"
+    save_dir = save_dir.format(*reg_detection_args.values())
+    save_dir = pjoin(run_dir, save_dir)
+    os.makedirs(save_dir, exist_ok=True)
 
     save_obj(
         obj=pd.DataFrame.from_dict(coeffs),
         file_name="coeffs_{:s}.df".format(time_now),
-        save_dir=run_dir,
+        save_dir=save_dir,
         mode='df',
         verbose=verbose,
     )
@@ -65,7 +75,7 @@ def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bo
     save_obj(
         obj=pd.DataFrame.from_dict(performances),
         file_name="performances_{:s}.df".format(time_now),
-        save_dir=run_dir,
+        save_dir=save_dir,
         mode='df',
         verbose=verbose,
     )
@@ -73,7 +83,7 @@ def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bo
     save_obj(
         obj=pd.DataFrame.from_dict(performances_filtered),
         file_name="performances_filtered_{:s}.df".format(time_now),
-        save_dir=run_dir,
+        save_dir=save_dir,
         mode='df',
         verbose=verbose,
     )
@@ -105,16 +115,22 @@ def combine_results(run_dir: str, regs_to_include: List[str] = None, verbose: bo
     save_obj(
         obj=pd.DataFrame.from_dict(coeffs_filtered),
         file_name="coeffs_filtered_{:s}.df".format(time_now),
-        save_dir=run_dir,
+        save_dir=save_dir,
         mode='df',
         verbose=verbose,
     )
     del coeffs_filtered
-    save_obj(classifiers, "classifiers_{:s}.pkl".format(time_now), run_dir, 'pkl', verbose)
+    save_obj(
+        obj=classifiers,
+        file_name="classifiers_{:s}.pkl".format(time_now),
+        save_dir=save_dir,
+        mode='pkl',
+        verbose=verbose,
+    )
     del classifiers
 
 
-def combine_fits(fit_metadata: Union[int, float, complex], verbose: bool = True):
+def combine_fits(fit_metadata: dict, verbose: bool = True):
     files = ['_coeffs.npy', '_performances.npy', '_classifiers.npy']
     listdir = os.listdir(fit_metadata['save_dir'])
 
@@ -168,12 +184,12 @@ def combine_fits(fit_metadata: Union[int, float, complex], verbose: bool = True)
         print("[WARNING] some fits were not combined here: {}".format(fit_metadata['save_dir']))
 
 
-def _porocess_results(performances: dict, coeffs: dict, verbose: bool = True) -> tuple:
+def _porocess_results(performances: dict, coeffs: dict, reg_detection_args: dict, verbose: bool = True) -> tuple:
     performances = {k: np.array(v) for k, v in performances.items()}
     coeffs = {k: np.array(v) for k, v in coeffs.items()}
 
     output = ()
-    performances = _detect_best_reg_timepoint(performances, verbose=verbose)
+    performances = _detect_best_reg_timepoint(performances, **reg_detection_args, verbose=verbose)
     output += (performances,)
     filtered = _filter(performances, coeffs, verbose)
     output += tuple(filtered)
@@ -194,8 +210,8 @@ def _filter(performances: dict, coeffs: dict, verbose: bool = True) -> Tuple[dic
     tasks = list(np.unique(performances['task']))
 
     matching_indxs = []
-    for task in tqdm(tasks, desc='[PROGRESS] filtering data', disable=not verbose, leave=False):
-        for name in names:
+    for name in tqdm(names, desc='[PROGRESS] filtering data', disable=not verbose):
+        for task in tqdm(tasks, disable=not verbose, leave=False):
             cond = (performances['name'] == name) & (performances['task'] == task)
             if not sum(cond):
                 continue
@@ -215,8 +231,9 @@ def _detect_best_reg_timepoint(
         performances: dict,
         criterion: str = 'mcc',
         start_time: int = 30,
+        end_time: int = 60,
+        filter_sz: int = 3,
         threshold: float = 0.9,
-        filter_sz: int = 5,
         verbose: bool = True,) -> dict:
 
     criterion_options = {'mcc': 0, 'accuracy': 1, 'f1': 2}
@@ -250,7 +267,7 @@ def _detect_best_reg_timepoint(
             mean_scores = smoothen(mean_scores, filter_sz=filter_sz)
             mean_confidences = confidences.mean(1)
 
-            max_score = np.max(mean_scores[:, start_time:])
+            max_score = np.max(mean_scores[:, start_time:end_time])
 
             if max_score <= 0.0:
                 a, b = 0, 0
@@ -258,9 +275,9 @@ def _detect_best_reg_timepoint(
                 lower_bound = threshold * max_score
                 above_threshold = mean_scores > lower_bound
 
-                a = min(np.unique(np.where(above_threshold[:, start_time:])[0]), key=lambda x: reg_cs[x])
+                a = min(np.unique(np.where(above_threshold[:, start_time:end_time])[0]), key=lambda x: reg_cs[x])
                 max_confidences = mean_confidences * above_threshold
-                b = np.argmax(max_confidences[a][start_time:]) + start_time
+                b = np.argmax(max_confidences[a][start_time:end_time]) + start_time
                 assert mean_scores[a, b] > lower_bound, "must select max score"
 
             best_reg[cond] = reg_cs[a]
@@ -334,6 +351,30 @@ def _setup_args() -> argparse.Namespace:
         default='svm',
     )
     parser.add_argument(
+        "--start_time",
+        help="start time",
+        type=int,
+        default=30,
+    )
+    parser.add_argument(
+        "--end_time",
+        help="end time",
+        type=int,
+        default=60,
+    )
+    parser.add_argument(
+        "--filter_sz",
+        help="smoothening filter size",
+        type=int,
+        default=3,
+    )
+    parser.add_argument(
+        "--threshold",
+        help="best reg selection threshold",
+        type=float,
+        default=0.9,
+    )
+    parser.add_argument(
         '--regs_to_include',
         help='list of regularizations to include in the combined result',
         type=float,
@@ -362,8 +403,20 @@ def main():
     results_dir = pjoin(base_dir, 'results')
     run_dir = pjoin(results_dir, args.clf_type, args.cm)
 
+    reg_detection_args = {
+        'start_time': args.start_time,
+        'end_time': args.end_time,
+        'filter_sz': args.filter_sz,
+        'threshold': args.threshold,
+    }
+
     # combine fits together
-    combine_results(run_dir, args.regs_to_include, verbose=args.verbose)
+    combine_results(
+        run_dir=run_dir,
+        reg_detection_args=reg_detection_args,
+        regs_to_include=args.regs_to_include,
+        verbose=args.verbose,
+    )
 
     print("[PROGRESS] done.\n")
 

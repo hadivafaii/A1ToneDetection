@@ -1,4 +1,3 @@
-import re
 import sys
 import argparse
 from tqdm import tqdm
@@ -6,7 +5,7 @@ from os.path import join as pjoin
 from .lda_analysis import LDA
 
 sys.path.append('..')
-from utils.generic_utils import get_tasks
+from utils.generic_utils import get_tasks, load_dfs
 from utils.animation import mk_coarse_grained_plot
 from utils.plot_functions import *
 
@@ -58,27 +57,11 @@ def main():
     h_load_file = pjoin(processed_dir, "organized_nb_std={:d}.h5".format(args.nb_std))
     processed_load_dir = pjoin(processed_dir, "processed_nb_std={:d}".format(args.nb_std))
 
-    available_files = os.listdir(clf_results_dir)
-    print("[INFO] files found:\n{}".format(available_files))
+    if args.verbose:
+        print("[INFO] files found:\n{}".format(os.listdir(clf_results_dir)))
+    df_all = load_dfs(clf_results_dir)
 
-    f_coeffs = list(filter(re.compile(r'coeffs_\[').match, available_files))[0]
-    f_performances = list(filter(re.compile(r'performances_\[').match, available_files))[0]
-    f_coeffs_filtered = list(filter(re.compile(r'coeffs_filtered_\[').match, available_files))[0]
-    f_performances_filtered = list(filter(re.compile(r'performances_filtered_\[').match, available_files))[0]
-
-    coeffs = pd.read_pickle(pjoin(clf_results_dir, f_coeffs))
-    performances = pd.read_pickle(pjoin(clf_results_dir, f_performances))
-    coeffs_filtered = pd.read_pickle(pjoin(clf_results_dir, f_coeffs_filtered))
-    performances_filtered = pd.read_pickle(pjoin(clf_results_dir, f_performances_filtered))
-
-    df_all = {
-        'performances': performances,
-        'performances_filtered': performances_filtered,
-        'coeffs': coeffs,
-        'coeffs_filtered': coeffs_filtered,
-    }
-
-    names = performances_filtered.name.unique().tolist()
+    names = df_all['performances_filtered'].name.unique().tolist()
     tasks = get_tasks()
     downsample_sizes = [16, 8, 4, 2]
 
@@ -97,7 +80,7 @@ def main():
         )
 
         # page 1: reg selection
-        df_p = performances.loc[performances.name == name]
+        df_p = df_all['performances'].loc[df_all['performances'].name == name]
         fig1, _, sup1 = mk_reg_selection_plot(
             performances=df_p,
             criterion='mcc',
@@ -108,7 +91,7 @@ def main():
         )
 
         # page 2: coeffs and importances
-        df_cf = coeffs_filtered.loc[coeffs_filtered.name == name]
+        df_cf = df_all['coeffs_filtered'].loc[df_all['coeffs_filtered'].name == name]
         fig2, _, sup2 = mk_coeffs_importances_plot(
             coeffs_filtered=df_cf,
             save_file=None,
@@ -123,6 +106,7 @@ def main():
             global_stats=False,
             shuffled=False,
             name=name,
+            dim=3,
             save_file=None,
             display=False,
             figsize=(18, 21),
@@ -135,6 +119,7 @@ def main():
             global_stats=False,
             shuffled=False,
             name=name,
+            dim=3,
             save_file=None,
             display=False,
             figsize=(18, 21),
@@ -146,10 +131,10 @@ def main():
 
         # last 10 pages: coarse-grained for each task
         for task in tqdm(tasks, disable=not args.verbose, leave=False):
-            cond = (performances_filtered.name == name) & (performances_filtered.task == task)
+            cond = (df_all['performances_filtered'].name == name) & (df_all['performances_filtered'].task == task)
             if not sum(cond):
                 continue
-            timepoint = performances_filtered.loc[cond, 'best_timepoint'].unique().item()
+            timepoint = df_all['performances_filtered'].loc[cond, 'best_timepoint'].unique().item()
             _fig, _sup, _, _ = mk_coarse_grained_plot(
                 df_all=df_all,
                 h_load_file=h_load_file,

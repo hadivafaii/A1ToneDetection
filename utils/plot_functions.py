@@ -533,7 +533,8 @@ def mk_reg_selection_plot(performances: pd.DataFrame, criterion: str = 'mcc',
     return fig, ax_arr, sup
 
 
-def mk_boxplots(df_all, criterion: str = 'mcc', save_file=None, display=True, figsize=(24, 8), dpi=100):
+def mk_boxplots(df_all, criterion: str = 'mcc', start_time: int = 30, end_time: int = 75,
+                save_file=None, display=True, figsize=(24, 8), dpi=100):
     criterion_choices = ['mcc', 'accuracy', 'f1']
     if criterion not in criterion_choices:
         raise RuntimeError("invalid criterion encountered, allowed options are: {}".format(criterion_choices))
@@ -574,7 +575,7 @@ def mk_boxplots(df_all, criterion: str = 'mcc', save_file=None, display=True, fi
     ax_arr[0, 0].set_xticklabels([t / 30 for t in xticks])
     ax_arr[0, 0].set_xlabel("t (s)", fontsize=11)
 
-    xticks = range(30, nt - 15 + 1, 15)
+    xticks = range(start_time, end_time + 1, 15)
     _ = ax_arr[1, 0].axvspan(30, 60, facecolor='lightgrey', alpha=0.5, zorder=0)
     sns.boxplot(
         x="best_timepoint",
@@ -591,7 +592,7 @@ def mk_boxplots(df_all, criterion: str = 'mcc', save_file=None, display=True, fi
         meanprops=meanprops,
         ax=ax_arr[1, 0],
     )
-    ax_arr[1, 0].set_xlim(30, nt - 15)
+    ax_arr[1, 0].set_xlim(start_time, end_time)
     ax_arr[1, 0].set_xticks(xticks)
     ax_arr[1, 0].set_xticklabels([t / 30 for t in xticks])
     ax_arr[1, 0].set_xlabel("t (s)", fontsize=11)
@@ -681,9 +682,13 @@ def mk_boxplots(df_all, criterion: str = 'mcc', save_file=None, display=True, fi
             else:
                 ax_arr[j, i].set_yticks([])
 
-    msg = "Results obtained using '{:s}' criterion and {:d} different seeds"
-    msg = msg.format(criterion, nb_seeds)
-    sup = fig.suptitle(msg, y=1.03, fontsize=25)
+    selected_df = df_all["performances_filtered"]
+    scores = selected_df.loc[selected_df.metric == criterion].score.to_numpy()
+
+    msg = "Results obtained using '{:s}' criterion and {:d} different seeds.  avg performance: {:.3f} ± {:.3f}\n"
+    msg += "Best timepoints were selected from range [{:.1f}:{:.1f}] seconds"
+    msg = msg.format(criterion, nb_seeds, scores.mean(), scores.std(), start_time / 30, end_time / 30)
+    sup = fig.suptitle(msg, y=1.07, fontsize=25)
 
     save_fig(fig, sup, save_file, display)
     return fig, ax_arr

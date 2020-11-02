@@ -180,7 +180,6 @@ def run_classification_analysis(
                             msg = msg.format(classifier_args['clf_type'], _allowed_clf_types)
                             raise ValueError(msg)
 
-                        y_pred = clf.predict(x_vld)
                         k = "{}^{}^{}^{}^{}".format(expt, task, random_state, classifier_args['C'], time_point)
                         if save_to_pieces:
                             data_dict = {k: (clf, x_vld, y_vld)}
@@ -194,6 +193,7 @@ def run_classification_analysis(
                         logger.info(msg)
                         break
 
+                    y_pred = clf.predict(x_vld)
                     mcc_all[time_point] = matthews_corrcoef(y_vld, y_pred)
                     accuracy_all[time_point] = accuracy_score(y_vld, y_pred)
                     f1_all[time_point] = f1_score(y_vld, y_pred)

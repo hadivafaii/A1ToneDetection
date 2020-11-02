@@ -11,7 +11,7 @@ from os.path import join as pjoin
 import matplotlib.pyplot as plt
 from matplotlib import animation, cm
 from matplotlib.gridspec import GridSpec
-from .generic_utils import downsample, get_tasks
+from .generic_utils import downsample, get_tasks, load_dfs
 from .plot_functions import save_fig
 
 
@@ -458,27 +458,11 @@ def main():
     results_dir = pjoin(base_dir, 'results', args.clf_type, args.cm)
     h_load_file = pjoin(processed_dir, "organized_nb_std={:d}.h5".format(args.nb_std))
 
-    available_files = os.listdir(results_dir)
-    print("[INFO] files found:\n{}".format(available_files))
+    if args.verbose:
+        print("[INFO] files found:\n{}".format(os.listdir(results_dir)))
+    df_all = load_dfs(results_dir)
 
-    f_coeffs = list(filter(re.compile(r'coeffs_\[').match, available_files))[0]
-    f_performances = list(filter(re.compile(r'performances_\[').match, available_files))[0]
-    f_coeffs_filtered = list(filter(re.compile(r'coeffs_filtered_\[').match, available_files))[0]
-    f_performances_filtered = list(filter(re.compile(r'performances_filtered_\[').match, available_files))[0]
-
-    coeffs = pd.read_pickle(pjoin(results_dir, f_coeffs))
-    performances = pd.read_pickle(pjoin(results_dir, f_performances))
-    coeffs_filtered = pd.read_pickle(pjoin(results_dir, f_coeffs_filtered))
-    performances_filtered = pd.read_pickle(pjoin(results_dir, f_performances_filtered))
-
-    df_all = {
-        'performances': performances,
-        'performances_filtered': performances_filtered,
-        'coeffs': coeffs,
-        'coeffs_filtered': coeffs_filtered,
-    }
-
-    names = performances_filtered.name.unique().tolist()
+    names = df_all['performances_filtered'].name.unique().tolist()
     tasks = get_tasks()
     downsample_sizes = [16, 8, 4, 2]
 
@@ -486,7 +470,7 @@ def main():
         save_dir = pjoin(results_dir, 'individual_results', name)
         os.makedirs(save_dir, exist_ok=True)
         for task in tqdm(tasks, disable=not args.verbose, leave=False):
-            cond = (performances_filtered.name == name) & (performances_filtered.task == task)
+            cond = (df_all['performances_filtered'].name == name) & (df_all['performances_filtered'].task == task)
             if not sum(cond):
                 continue
             pos_lbl, neg_lbl = task.split('/')

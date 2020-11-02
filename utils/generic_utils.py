@@ -1,3 +1,5 @@
+import os
+import re
 import shutil
 import joblib
 import pickle
@@ -11,6 +13,25 @@ from os.path import join as pjoin
 from datetime import datetime
 from typing import List, Dict, Any
 from tqdm import tqdm
+
+
+def load_dfs(load_dir: str) -> Dict[str, pd.DataFrame]:
+    def _get_file(file_list, pattern):
+        return next(filter(re.compile(pattern).match, file_list), None)
+
+    flist = os.listdir(load_dir)
+    coeffs = pd.read_pickle(pjoin(load_dir, _get_file(flist, r'coeffs_\[')))
+    performances = pd.read_pickle(pjoin(load_dir, _get_file(flist, r'performances_\[')))
+    coeffs_filtered = pd.read_pickle(pjoin(load_dir, _get_file(flist, r'coeffs_filtered_\[')))
+    performances_filtered = pd.read_pickle(pjoin(load_dir, _get_file(flist, r'performances_filtered_\[')))
+
+    df_all = {
+        'performances': performances,
+        'performances_filtered': performances_filtered,
+        'coeffs': coeffs,
+        'coeffs_filtered': coeffs_filtered,
+    }
+    return df_all
 
 
 def smoothen(arr: np.ndarray, filter_sz: int = 5):
@@ -30,7 +51,6 @@ def smoothen(arr: np.ndarray, filter_sz: int = 5):
 def downsample(data, xy, xbins, ybins, normalize=True):
     xbins = sorted(xbins)
     ybins = sorted(ybins)
-
     assert len(xbins) == len(ybins)
     nbins = len(xbins)
 
@@ -47,13 +67,13 @@ def downsample(data, xy, xbins, ybins, normalize=True):
             bin_i = -1
         else:
             bin_i = int(np.floor(
-                (x-min(xbins)) / delta_x
+                (x - min(xbins)) / delta_x
             ))
         if y == max(ybins):
             bin_j = -1
         else:
             bin_j = int(np.floor(
-                (y-min(ybins)) / delta_y
+                (y - min(ybins)) / delta_y
             ))
 
         downsampled[bin_j, bin_i] += data[cell]
@@ -124,3 +144,11 @@ def now(exclude_hour_min: bool = False):
         return datetime.now().strftime("[%Y_%m_%d]")
     else:
         return datetime.now().strftime("[%Y_%m_%d_%H-%M]")
+
+
+def isfloat(string: str):
+    try:
+        float(string)
+        return True
+    except ValueError:
+        return False
