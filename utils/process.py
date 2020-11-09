@@ -144,12 +144,12 @@ def summarize_data(load_file: str, save_file: str = None):
     msg2 += "\n- percent frequencies used (behavior):\n"
 
     msg3 = ""
-    for k, v in behavior_frequencies_counter.most_common():
+    for k, v in sorted(behavior_frequencies_counter.most_common(), key=lambda x: x[0]):
         msg3 += "\t○ {:d} Hz: {:d}{:s}\n".format(k, int(np.ceil(v / tot_behavior_trials * 100)), '%')
     msg3 += "\n- percent frequencies used (passive):\n"
 
     msg4 = ""
-    for k, v in passive_frequencies_counter.most_common():
+    for k, v in sorted(passive_frequencies_counter.most_common(), key=lambda x: x[0]):
         msg4 += "\t○ {:d} Hz: {:d}{:s}\n".format(k, int(np.ceil(v / tot_passive_trials * 100)), '%')
     msg4 += "\n- percent stim levels used (behavior):\n"
 
@@ -274,7 +274,7 @@ def process_data(load_file: str, save_dir: str, normalize: bool = False):
             }
             dictdata_list.append(data_dict)
         df = pd.DataFrame.from_dict(merge_dicts(dictdata_list))
-        save_obj(data=df, file_name="{}.df".format(name), save_dir=save_dir, mode='df', verbose=True)
+        save_obj(obj=df, file_name="{}.df".format(name), save_dir=save_dir, mode='df', verbose=True)
     f.close()
     print('[PROGRESS] processing done.')
 
