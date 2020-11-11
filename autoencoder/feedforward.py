@@ -14,11 +14,13 @@ class TiedAutoEncoder(nn.Module):
         self.embedding = CellEmbedding(config, verbose)
         self.encoder = nn.Linear(config.h_dim, config.z_dim, bias=True)
         self.decoder = nn.Linear(config.z_dim, config.h_dim, bias=True)
+        self.classifier = Classifier(config, verbose)
         self.relu1 = nn.ReLU(inplace=True)
         self.relu2 = nn.ReLU(inplace=True)
         self.relu3 = nn.ReLU(inplace=True)
-        self.dropout = nn.Dropout(config.dropout)
-        self.criterion = nn.MSELoss(reduction="sum")
+        self.dropout = nn.Dropout(config.embedding_dropout)
+        self.recon_criterion = nn.MSELoss(reduction='sum')
+        self.clf_criterion = nn.CrossEntropyLoss(reduction='sum')
 
         if verbose:
             print_num_params(self)
@@ -40,21 +42,34 @@ class Classifier(nn.Module):
                  config: FeedForwardConfig,
                  verbose: bool = False,):
         super(Classifier, self).__init__()
-
+        self.config = config
         self.fc = nn.Linear(config.h_dim, config.c_dim, bias=True)
-        self.relu = nn.ReLU(inplace=True)
         self.norm = nn.LayerNorm(config.c_dim)
-        self.classifier = nn.Linear(config.c_dim, len(config.include_trials), bias=True)
+
+        self.rnn = nn.GRU(
+            input_size=config.c_dim,
+            hidden_size=config.c_dim,
+            batch_first=True,
+            bias=True,)
+        self.classifier = nn.Linear(config.c_dim, len(config.l2i), bias=True)
+
+        self.relu1 = nn.ReLU(inplace=True)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout(config.classifier_dropout)
+        self.criterion = nn.CrossEntropyLoss(reduction="sum")
 
         if verbose:
             print_num_params(self)
 
     def forward(self, x):
-        # input shape: N x h_dim
-        x = self.fc(x)  # N x c_dim
-        x = self.relu(x)
-        x = self.norm(x)
-        y = self.classifier(x)  # N x num_classes
+        if len(x.size()) == 3:
+            x = x[:, 30:60, :]
+        x = self.relu1(x)
+        x = self.dropout(x)
+        x = self.fc(x)
+        x = self.relu2(x)
+        _, h = self.rnn(x)
+        y = self.classifier(h.squeeze())
         return y
 
 

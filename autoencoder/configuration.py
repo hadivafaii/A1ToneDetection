@@ -9,6 +9,8 @@ class BaseConfig(object):
     def __init__(self,
                  include_trials: List[str] = None,
                  include_freqs: List[int] = None,
+                 l2i: Dict[str, int] = None,
+                 i2l: Dict[int, str] = None,
                  nb_cells: Dict[str, int] = None,
                  nb_std: int = 1,
                  base_dir: str = 'Documents/A1',
@@ -19,6 +21,9 @@ class BaseConfig(object):
         include_freqs_default = [7000, 9899, 14000, 19799, 7071, 8000, 10000, 14142, 20000, 22627]
         self.include_trials = include_trials_default if include_trials is None else include_trials
         self.include_freqs = include_freqs_default if include_freqs is None else include_freqs
+        self.l2i = {} if l2i is None else l2i
+        self.i2l = {} if i2l is None else i2l
+        self.set_l2i2l()
 
         # dir configs
         self.nb_std = nb_std
@@ -28,40 +33,57 @@ class BaseConfig(object):
         self.h_file = pjoin(_processed_dir, _file_name) if h_file is None else h_file
 
         # nb_cells dict
-        self.nb_cells = self._get_nb_cells() if nb_cells is None else nb_cells
-    
-    def _get_nb_cells(self):
-        nb_cells = {}
-        f = h5py.File(self.h_file, 'r')
-        for name in f:
-            behavior = f[name]['behavior']
-            passive = f[name]['passive']
-            good_cells_b = np.array(behavior["good_cells"], dtype=int)
-            good_cells_p = np.array(passive["good_cells"], dtype=int)
-            good_cells = set(good_cells_b).intersection(set(good_cells_p))
-            good_cells = list(good_cells)
-            nb_cells[name] = len(good_cells)
-        return nb_cells
+        self.nb_cells = {}
+        self.set_nb_cells(nb_cells)
+
+    def set_nb_cells(self, nb_cells: Dict[str, int] = None):
+        if nb_cells is not None:
+            self.nb_cells = nb_cells
+        else:
+            nb_cells = {}
+            f = h5py.File(self.h_file, 'r')
+            for name in f:
+                behavior = f[name]['behavior']
+                passive = f[name]['passive']
+                good_cells_b = np.array(behavior["good_cells"], dtype=int)
+                good_cells_p = np.array(passive["good_cells"], dtype=int)
+                good_cells = set(good_cells_b).intersection(set(good_cells_p))
+                good_cells = list(good_cells)
+                nb_cells[name] = len(good_cells)
+            self.nb_cells = nb_cells
+            f.close()
+
+    def set_l2i2l(self):
+        if not len(self.l2i):
+            self.l2i = {lbl: i for i, lbl in enumerate(self.include_trials)}
+        if not len(self.i2l):
+            self.i2l = {i: lbl for lbl, i in self.l2i.items()}
 
 
 class FeedForwardConfig(BaseConfig):
     def __init__(self,
-                 dropout: float = 0.5,
-                 h_dim: int = 16,
-                 z_dim: int = 8,
+                 h_dim: int = 64,
+                 z_dim: int = 16,
                  c_dim: int = 8,
+                 time_slice: range = range(30, 45),
+                 loss_lambda: float = 1.0,
+                 embedding_dropout: float = 0.2,
+                 classifier_dropout: float = 0.5,
                  **kwargs,):
         super(FeedForwardConfig, self).__init__(**kwargs)
-        self.dropout = dropout
         self.h_dim = h_dim
         self.z_dim = z_dim
         self.c_dim = c_dim
+        self.time_slice = time_slice
+        self.loss_lambda = loss_lambda
+        self.embedding_dropout = embedding_dropout
+        self.classifier_dropout = classifier_dropout
 
 
 class TrainConfig:
     def __init__(self,
                  lr: float = 1e-2,
-                 weight_decay: float = 1e-3,
+                 weight_decay: float = 1e-1,
                  scheduler_period: int = 100,
                  eta_min: float = 1e-8,
                  batch_size: int = 64,

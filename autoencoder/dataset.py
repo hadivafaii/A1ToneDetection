@@ -4,9 +4,80 @@ import pandas as pd
 from typing import Dict
 from collections import Counter
 
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import WeightedRandomSampler, RandomSampler
 from utils.generic_utils import reset_df
+
+
+class ClassifierDataset(Dataset):
+    def __init__(
+            self,
+            x: np.ndarray,
+            y: np.ndarray,
+            z: np.ndarray,
+    ):
+        assert len(x) == len(y) == len(z), "input/output num samples must be equal"
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+        return self.x[idx], self.y[idx], self.z[idx]
+
+
+def create_clf_dataset(output_train, output_valid, batch_size):
+    x_trn = output_train['x']
+    y_trn = output_train['y']
+    z_trn = output_train['z']
+    x_vld = output_valid['x']
+    y_vld = output_valid['y']
+    z_vld = output_valid['z']
+
+    ds_train = ClassifierDataset(x_trn, y_trn, z_trn)
+    ds_valid = ClassifierDataset(x_vld, y_vld, z_vld)
+
+    dl_train = DataLoader(
+        dataset=ds_train,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,)
+    dl_valid = DataLoader(
+        dataset=ds_valid,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=False,)
+
+    return dl_train, dl_valid
+
+
+def create_clf_dataset_asli(trainer, batch_size: int = None):
+
+    x_trn = output_train['x']
+    y_trn = output_train['y']
+    x_vld = output_valid['x']
+    y_vld = output_valid['y']
+
+    ds_train = ClassifierDataset(x_trn, y_trn, None)
+    ds_valid = ClassifierDataset(x_vld, y_vld, None)
+
+    if batch_size is None:
+        batch_size = trainer.train_config.batch_size
+
+    dl_train = DataLoader(
+        dataset=ds_train,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,)
+    dl_valid = DataLoader(
+        dataset=ds_valid,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=False,)
+
+    return dl_train, dl_valid
 
 
 class A1Dataset(Dataset):
@@ -67,7 +138,7 @@ class A1Dataset(Dataset):
         return w
 
 
-def create_datasets(config, train_config):
+def create_a1_dataset(config, train_config):
     ds_train, ds_valid = _create_ds(config, train_config)
 
     if train_config.balanced_sampling:
