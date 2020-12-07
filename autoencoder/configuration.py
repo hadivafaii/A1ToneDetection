@@ -3,6 +3,7 @@ import h5py
 import numpy as np
 from typing import List, Dict
 from os.path import join as pjoin
+from utils.process import summarize_data
 
 
 class BaseConfig(object):
@@ -11,19 +12,30 @@ class BaseConfig(object):
                  include_freqs: List[int] = None,
                  l2i: Dict[str, int] = None,
                  i2l: Dict[int, str] = None,
+                 f2i: Dict[int, int] = None,
+                 i2f: Dict[int, int] = None,
+                 n2i: Dict[str, int] = None,
+                 i2n: Dict[int, str] = None,
                  nb_cells: Dict[str, int] = None,
+                 nb_timepoints: int = 135,
+                 init_range: float = 0.01,
                  nb_std: int = 1,
                  base_dir: str = 'Documents/A1',
                  h_file: str = None,):
         super(BaseConfig, self).__init__()
         # trial types and frequencies to include in analysis
         include_trials_default = ['hit', 'miss', 'correctreject', 'falsealarm', 'passive']
-        include_freqs_default = [7000, 9899, 14000, 19799, 7071, 8000, 10000, 14142, 20000, 22627]
+        # include_freqs_default = [7000, 9899, 14000, 19799, 7071, 8000, 10000, 14142, 20000, 22627]
+        include_freqs_behavior = [7000, 9899, 14000, 19799]
+        include_freqs_passive = [4000, 5000, 5657, 7071, 8000, 10000, 11314, 14142,
+                                 16000, 20000, 22627, 28284, 32000, 40000, 45255, 56569]
+        include_freqs_default = sorted(include_freqs_behavior + include_freqs_passive)
         self.include_trials = include_trials_default if include_trials is None else include_trials
         self.include_freqs = include_freqs_default if include_freqs is None else include_freqs
-        self.l2i = {} if l2i is None else l2i
-        self.i2l = {} if i2l is None else i2l
-        self.set_l2i2l()
+
+        # other
+        self.nb_timepoints = nb_timepoints
+        self.init_range = init_range
 
         # dir configs
         self.nb_std = nb_std
@@ -33,12 +45,21 @@ class BaseConfig(object):
         self.h_file = pjoin(_processed_dir, _file_name) if h_file is None else h_file
 
         # nb_cells dict
-        self.nb_cells = {}
-        self.set_nb_cells(nb_cells)
+        self.nb_cells = nb_cells
+        self._set_nb_cells()
 
-    def set_nb_cells(self, nb_cells: Dict[str, int] = None):
-        if nb_cells is not None:
-            self.nb_cells = nb_cells
+        # lookup dicts
+        self.l2i = {} if l2i is None else l2i
+        self.i2l = {} if i2l is None else i2l
+        self.f2i = {} if f2i is None else f2i
+        self.i2f = {} if i2f is None else i2f
+        self.n2i = {} if n2i is None else n2i
+        self.i2n = {} if i2n is None else i2n
+        self._set_lookup_dicts()
+
+    def _set_nb_cells(self):
+        if self.nb_cells is not None:
+            pass
         else:
             nb_cells = {}
             f = h5py.File(self.h_file, 'r')
@@ -53,11 +74,79 @@ class BaseConfig(object):
             self.nb_cells = nb_cells
             f.close()
 
-    def set_l2i2l(self):
+    def _set_lookup_dicts(self):
+        # labels
         if not len(self.l2i):
             self.l2i = {lbl: i for i, lbl in enumerate(self.include_trials)}
         if not len(self.i2l):
             self.i2l = {i: lbl for lbl, i in self.l2i.items()}
+
+        # stim freq
+        if not len(self.f2i):
+            self.f2i = {freq: i for i, freq in enumerate(self.include_freqs)}
+        if not len(self.i2f):
+            self.i2f = {i: freq for freq, i in self.f2i.items()}
+
+        # expt names
+        if not len(self.n2i):
+            self.n2i = {name: i for i, name in enumerate(self.nb_cells.keys())}
+        if not len(self.i2n):
+            self.i2n = {i: name for name, i in self.n2i.items()}
+
+
+class VAEConfig(BaseConfig):
+    def __init__(self,
+                 lick_embedding_dim: int = 4,
+                 label_embedding_dim: int = 8,
+                 cell_embedding_dim: int = 128,
+                 h_dim: int = 32,
+                 z_dim: int = 8,
+                 nb_levels: int = 4,
+                 kernel_size: int = 3,
+
+                 activation_fn: str = 'relu',
+                 upsample_mode: str = 'linear',
+                 normalization: str = 'spectral',
+                 residual_kl: bool = True,
+                 use_dilation: bool = False,
+                 use_bias: bool = False,
+                 dropout: float = 0.0,
+
+                 planes: Dict[int, int] = None,
+                 hierarchy_size: Dict[int, int] = None,
+
+                 **kwargs,
+                 ):
+        super(VAEConfig, self).__init__(**kwargs)
+
+        self.lick_embedding_dim = lick_embedding_dim
+        self.label_embedding_dim = label_embedding_dim
+        self.cell_embedding_dim = cell_embedding_dim
+        self.h_dim = h_dim
+        self.z_dim = z_dim
+        self.nb_levels = nb_levels
+        self.kernel_size = kernel_size
+
+        _allowed_activation_fn = ['relu', 'swish', 'learned_swish', 'gelu']
+        assert activation_fn in _allowed_activation_fn,\
+            "allowed scheduler types: {}".format(_allowed_activation_fn)
+        self.activation_fn = activation_fn
+        self.upsample_mode = upsample_mode
+        self.normalization = normalization
+        self.residual_kl = residual_kl
+        self.use_dilation = use_dilation
+        self.use_bias = use_bias
+        self.dropout = dropout
+
+        self.planes = {} if planes is None else planes
+        self.hierarchy_size = {} if hierarchy_size is None else hierarchy_size
+        self._compute_hierarchy_dims()
+
+    def _compute_hierarchy_dims(self):
+        for level in range(self.nb_levels + 1):
+            i = self.nb_levels - level
+            self.planes[level] = (self.h_dim + self.lick_embedding_dim) * 2 ** i + self.label_embedding_dim
+            self.hierarchy_size[level] = int(np.ceil(self.nb_timepoints / 2 ** i))
 
 
 class FeedForwardConfig(BaseConfig):
@@ -65,16 +154,23 @@ class FeedForwardConfig(BaseConfig):
                  h_dim: int = 64,
                  z_dim: int = 16,
                  c_dim: int = 8,
-                 time_slice: range = range(30, 45),
+
+                 start_time: int = 30,
+                 end_time: int = 45,
+
                  loss_lambda: float = 1.0,
                  embedding_dropout: float = 0.2,
                  classifier_dropout: float = 0.5,
-                 **kwargs,):
+                 **kwargs,
+                 ):
         super(FeedForwardConfig, self).__init__(**kwargs)
         self.h_dim = h_dim
         self.z_dim = z_dim
         self.c_dim = c_dim
-        self.time_slice = time_slice
+
+        self.start_time = start_time
+        self.end_time = end_time
+
         self.loss_lambda = loss_lambda
         self.embedding_dropout = embedding_dropout
         self.classifier_dropout = classifier_dropout
@@ -82,12 +178,20 @@ class FeedForwardConfig(BaseConfig):
 
 class TrainConfig:
     def __init__(self,
-                 lr: float = 1e-2,
-                 weight_decay: float = 1e-1,
-                 scheduler_period: int = 100,
-                 eta_min: float = 1e-8,
+                 lr: float = 1e-3,
+                 beta1: float = 0.9,
+                 beta2: float = 0.999,
                  batch_size: int = 64,
+                 weight_decay: float = 1e-2,
 
+                 scheduler_period: int = 20,
+                 eta_min: float = 1e-8,
+                 scheduler_type: str = 'cosine',
+                 scheduler_gamma: float = 0.9,
+
+                 loss_coeffs: Dict[str, float] = None,
+                 grad_clip: float = 200.0,
+                 skip_threshold: float = 300.0,
                  balanced_sampling: bool = True,
                  replacement: bool = False,
 
@@ -100,11 +204,29 @@ class TrainConfig:
                  runs_dir: str = 'Documents/A1/runs',):
 
         self.lr = lr
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.batch_size = batch_size
         self.weight_decay = weight_decay
         self.scheduler_period = scheduler_period
         self.eta_min = eta_min
-        self.batch_size = batch_size
 
+        _allowed_schedulers = ['cosine', 'exponential', 'step', None]
+        assert scheduler_type in _allowed_schedulers,\
+            "allowed scheduler types: {}".format(_allowed_schedulers)
+        self.scheduler_type = scheduler_type
+        self.scheduler_gamma = scheduler_gamma
+
+        _loss_coeff_defaults = {
+            'dff': 1.0,
+            'lick': 5.0,
+            'label': 1.0,
+            'freq': 1.0,
+            'name': 1.0,
+        }
+        self.loss_coeffs = _loss_coeff_defaults if loss_coeffs is None else loss_coeffs
+        self.grad_clip = grad_clip
+        self.skip_threshold = skip_threshold
         self.balanced_sampling = balanced_sampling
         self.replacement = replacement
 

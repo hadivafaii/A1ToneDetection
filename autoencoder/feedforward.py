@@ -1,6 +1,6 @@
-import torch
-from torch import nn
-from torch.nn import functional as F
+from torch.nn.utils import weight_norm
+
+from .common import *
 from .model_utils import print_num_params
 from .configuration import FeedForwardConfig
 
@@ -12,27 +12,27 @@ class TiedAutoEncoder(nn.Module):
         super(TiedAutoEncoder, self).__init__()
         self.config = config
         self.embedding = CellEmbedding(config, verbose)
-        self.encoder = nn.Linear(config.h_dim, config.z_dim, bias=True)
-        self.decoder = nn.Linear(config.z_dim, config.h_dim, bias=True)
-        self.classifier = Classifier(config, verbose)
-        self.relu1 = nn.ReLU(inplace=True)
-        self.relu2 = nn.ReLU(inplace=True)
-        self.relu3 = nn.ReLU(inplace=True)
+        self.encoder = nn.Sequential(
+            weight_norm(nn.Linear(config.h_dim, config.z_dim, bias=True)),
+            nn.BatchNorm1d(config.z_dim),
+            nn.ReLU(inplace=True),
+        )
+        self.decoder = nn.Sequential(
+            weight_norm(nn.Linear(config.z_dim, config.h_dim, bias=True)),
+            nn.BatchNorm1d(config.h_dim),
+            nn.ReLU(inplace=True),
+        )
         self.dropout = nn.Dropout(config.embedding_dropout)
-        self.recon_criterion = nn.MSELoss(reduction='sum')
-        self.clf_criterion = nn.CrossEntropyLoss(reduction='sum')
+        self.criterion = NormalizedMSE(mode='var', dim=0)
 
         if verbose:
             print_num_params(self)
 
     def forward(self, name, x):
         x = self.embedding(name, x, encoding=True)
-        x = self.relu1(x)
         x = self.dropout(x)
-        x = self.encoder(x)
-        z = self.relu2(x)
+        z = self.encoder(x)
         y = self.decoder(z)
-        y = self.relu3(y)
         y = self.embedding(name, y, encoding=False)
         return y, z
 
@@ -43,18 +43,14 @@ class Classifier(nn.Module):
                  verbose: bool = False,):
         super(Classifier, self).__init__()
         self.config = config
-        self.fc = nn.Linear(config.h_dim, config.c_dim, bias=True)
-        self.norm = nn.LayerNorm(config.c_dim)
-
+        self.fc1 = nn.Linear(config.h_dim, config.c_dim, bias=True)
+        self.fc2 = nn.Linear(config.c_dim, len(config.l2i), bias=True)
+        self.relu = nn.ReLU(inplace=True)
         self.rnn = nn.GRU(
             input_size=config.c_dim,
             hidden_size=config.c_dim,
             batch_first=True,
             bias=True,)
-        self.classifier = nn.Linear(config.c_dim, len(config.l2i), bias=True)
-
-        self.relu1 = nn.ReLU(inplace=True)
-        self.relu2 = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(config.classifier_dropout)
         self.criterion = nn.CrossEntropyLoss(reduction="sum")
 
@@ -63,37 +59,14 @@ class Classifier(nn.Module):
 
     def forward(self, x):
         if len(x.size()) == 3:
-            x = x[:, 30:60, :]
-        x = self.relu1(x)
+            slice_ = slice(self.config.start_time, self.config.end_time, 1)
+            x = x[:, slice_, :].contiguous()
         x = self.dropout(x)
-        x = self.fc(x)
-        x = self.relu2(x)
+        x = self.fc1(x)
+        x = self.relu(x)
         _, h = self.rnn(x)
-        y = self.classifier(h.squeeze())
+        y = self.fc2(h.squeeze())
         return y
-
-
-class CellEmbedding(nn.Module):
-    def __init__(self,
-                 config: FeedForwardConfig,
-                 verbose=False,):
-        super(CellEmbedding, self).__init__()
-
-        self.layer = nn.ModuleDict(
-            {name: nn.Linear(nc, config.h_dim, bias=False)
-             for name, nc in config.nb_cells.items()}
-        )
-        self.decoder_bias = nn.ParameterDict(
-            {name: nn.Parameter(torch.zeros(nc))
-             for name, nc in config.nb_cells.items()}
-        )
-        if verbose:
-            print_num_params(self)
-
-    def forward(self, name, x, encoding: bool = True):
-        weight = self.layer[name].weight
-        bias = self.decoder_bias[name]
-        return F.linear(x, weight, None) if encoding else F.linear(x, weight.T, bias)
 
 
 class AutoEncoder(nn.Module):

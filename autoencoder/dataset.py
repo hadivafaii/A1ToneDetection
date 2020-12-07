@@ -15,20 +15,29 @@ class ClassifierDataset(Dataset):
             x: np.ndarray,
             y: np.ndarray,
             z: np.ndarray,
+            transform=None,
     ):
         assert len(x) == len(y) == len(z), "input/output num samples must be equal"
         self.x = x
         self.y = y
         self.z = z
+        self.transform = transform
 
     def __len__(self):
         return len(self.y)
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y[idx], self.z[idx]
+        x = self.x[idx]
+        y = self.y[idx]
+        z = self.z[idx]
+
+        if self.transform is not None:
+            x = self.transform(x)
+            z = self.transform(z)
+        return x, y, z
 
 
-def create_clf_dataset(output_train, output_valid, batch_size):
+def create_clf_dataset(output_train: dict, output_valid: dict, batch_size: int):
     x_trn = output_train['x']
     y_trn = output_train['y']
     z_trn = output_train['z']
@@ -36,35 +45,8 @@ def create_clf_dataset(output_train, output_valid, batch_size):
     y_vld = output_valid['y']
     z_vld = output_valid['z']
 
-    ds_train = ClassifierDataset(x_trn, y_trn, z_trn)
-    ds_valid = ClassifierDataset(x_vld, y_vld, z_vld)
-
-    dl_train = DataLoader(
-        dataset=ds_train,
-        batch_size=batch_size,
-        shuffle=True,
-        drop_last=True,)
-    dl_valid = DataLoader(
-        dataset=ds_valid,
-        batch_size=batch_size,
-        shuffle=False,
-        drop_last=False,)
-
-    return dl_train, dl_valid
-
-
-def create_clf_dataset_asli(trainer, batch_size: int = None):
-
-    x_trn = output_train['x']
-    y_trn = output_train['y']
-    x_vld = output_valid['x']
-    y_vld = output_valid['y']
-
-    ds_train = ClassifierDataset(x_trn, y_trn, None)
-    ds_valid = ClassifierDataset(x_vld, y_vld, None)
-
-    if batch_size is None:
-        batch_size = trainer.train_config.batch_size
+    ds_train = ClassifierDataset(x_trn, y_trn, z_trn, None)
+    ds_valid = ClassifierDataset(x_vld, y_vld, z_vld, None)
 
     dl_train = DataLoader(
         dataset=ds_train,
@@ -87,12 +69,18 @@ class A1Dataset(Dataset):
             licks: Dict[str, np.ndarray],
             ranges: Dict[str, tuple],
             df: pd.DataFrame,
+            l2i: Dict[str, int] = None,
+            f2i: Dict[int, int] = None,
+            n2i: Dict[str, int] = None,
             transform=None,
     ):
         self.dff = dff
         self.licks = licks
         self.ranges = ranges
         self.df = df
+        self.l2i = l2i
+        self.f2i = f2i
+        self.n2i = n2i
         self.transform = transform
         self.sample_weights = self._compute_sample_weights()
 
@@ -100,22 +88,34 @@ class A1Dataset(Dataset):
         return sum([v.shape[1] for v in self.licks.values()])
 
     def __getitem__(self, idx):
-        gen = self._generate_idxs(idx)
-        names, dffs, licks, labels = [], [], [], []
-        for name, i in gen:
+        generator = self._generate_idxs(idx)
+        names, labels, freqs, dffs, licks = [], [], [], [], []
+        for name, i in generator:
+            label = self.df.loc[self.df.name == name, 'label'].iloc[i]
+            freq = self.df.loc[self.df.name == name, 'freq'].iloc[i]
             dff = self.dff[name][:, i, :]
             lick = self.licks[name][:, i]
-            label = self.df.loc[self.df.name == name, 'label'].iloc[i]
 
-            if self.transform is not None:
-                dff = self.transform(dff)
-
-            names.append(name)
+            names.append(self.n2i[name])
+            labels.append(self.l2i[label])
+            freqs.append(self.f2i[freq])
             dffs.append(dff)
-            licks.append(lick)
-            labels.append(label)
+            licks.append(lick.reshape(1, -1, 1))
 
-        return names, dffs, licks, labels
+        names, labels, freqs = tuple(map(lambda x: np.array(x), [names, labels, freqs]))
+        licks = np.concatenate(licks)
+
+        if self.transform is not None:
+            dffs = self.transform(dffs)
+
+        data = {
+            'name': names,
+            'label': labels,
+            'freq': freqs,
+            'dff': dffs,
+            'lick': licks,
+        }
+        return data
 
     def _generate_idxs(self, idx):
         if isinstance(idx, int):
@@ -244,8 +244,24 @@ def _create_ds(config, train_config):
     dff_train, licks_train, ranges_train, train_indxs = outputs_train
     dff_valid, licks_valid, ranges_valid, valid_indxs = outputs_valid
 
-    ds_train = A1Dataset(dff_train, licks_train, ranges_train, df.iloc[np.concatenate([*train_indxs.values()])], None)
-    ds_valid = A1Dataset(dff_valid, licks_valid, ranges_valid, df.iloc[np.concatenate([*valid_indxs.values()])], None)
+    ds_train = A1Dataset(
+        dff=dff_train,
+        licks=licks_train,
+        ranges=ranges_train,
+        df=df.iloc[np.concatenate([*train_indxs.values()])],
+        l2i=config.l2i,
+        f2i=config.f2i,
+        n2i=config.n2i,
+        transform=None,)
+    ds_valid = A1Dataset(
+        dff=dff_valid,
+        licks=licks_valid,
+        ranges=ranges_valid,
+        df=df.iloc[np.concatenate([*valid_indxs.values()])],
+        l2i=config.l2i,
+        f2i=config.f2i,
+        n2i=config.n2i,
+        transform=None,)
 
     return ds_train, ds_valid
 

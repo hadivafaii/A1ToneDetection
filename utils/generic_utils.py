@@ -85,8 +85,10 @@ def downsample(data, xy, xbins, ybins, normalize=True):
         return downsampled
 
 
-def get_tasks():
+def get_tasks(include_passive: bool = False):
     raw_tasks = ['hit', 'miss', 'correctreject', 'falsealarm']
+    if include_passive:
+        raw_tasks.append('passive')
     tasks = []
     for i, t1 in enumerate(raw_tasks):
         reduced = [item for item in raw_tasks[i:] if item != t1]

@@ -27,7 +27,7 @@ def combine_dfs(load_dir: str) -> pd.DataFrame:
     return reset_df(df_all)
 
 
-def summarize_data(load_file: str, save_file: str = None):
+def summarize_data(load_file: str, verbose: bool = True, save_file: str = None):
     all_trial_types = [
         'correctreject', 'early', 'earlyfalsealarm', 'earlyhit',
         'falsealarm', 'hit', 'miss', 'target', 'nontarget']
@@ -165,7 +165,8 @@ def summarize_data(load_file: str, save_file: str = None):
 
     msg = msg1 + msg2 + msg3 + msg4 + msg5 + msg6
 
-    print(msg)
+    if verbose:
+        print(msg)
 
     if save_file is not None:
         save_dir = os.path.dirname(save_file)
@@ -388,7 +389,7 @@ def get_bad_trials(data: List[dict]) -> List[int]:
     return bad_trials
 
 
-def get_good_cells(data: List[dict], nb_std: int = 5, norm_order: int = 2) -> List[tuple]:
+def get_good_cells(data: List[dict], nb_std: int = 1, norm_order: int = 2) -> List[tuple]:
     if not isinstance(data, list):
         data = [data]
 
