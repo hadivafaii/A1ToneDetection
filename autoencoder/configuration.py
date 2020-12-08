@@ -97,9 +97,9 @@ class BaseConfig(object):
 class VAEConfig(BaseConfig):
     def __init__(self,
                  lick_embedding_dim: int = 4,
-                 label_embedding_dim: int = 8,
-                 cell_embedding_dim: int = 128,
-                 h_dim: int = 32,
+                 label_embedding_dim: int = 16,
+                 cell_embedding_dim: int = 64,
+                 # h_dim: int = 32,
                  z_dim: int = 8,
                  nb_levels: int = 4,
                  kernel_size: int = 3,
@@ -122,7 +122,7 @@ class VAEConfig(BaseConfig):
         self.lick_embedding_dim = lick_embedding_dim
         self.label_embedding_dim = label_embedding_dim
         self.cell_embedding_dim = cell_embedding_dim
-        self.h_dim = h_dim
+        # self.h_dim = h_dim
         self.z_dim = z_dim
         self.nb_levels = nb_levels
         self.kernel_size = kernel_size
@@ -145,7 +145,7 @@ class VAEConfig(BaseConfig):
     def _compute_hierarchy_dims(self):
         for level in range(self.nb_levels + 1):
             i = self.nb_levels - level
-            self.planes[level] = (self.h_dim + self.lick_embedding_dim) * 2 ** i + self.label_embedding_dim
+            self.planes[level] = (self.cell_embedding_dim + self.lick_embedding_dim) * 2 ** i + self.label_embedding_dim
             self.hierarchy_size[level] = int(np.ceil(self.nb_timepoints / 2 ** i))
 
 
@@ -192,6 +192,7 @@ class TrainConfig:
                  loss_coeffs: Dict[str, float] = None,
                  grad_clip: float = 200.0,
                  skip_threshold: float = 300.0,
+                 beta_warmup_steps: int = int(2e4),
                  balanced_sampling: bool = True,
                  replacement: bool = False,
 
@@ -227,6 +228,7 @@ class TrainConfig:
         self.loss_coeffs = _loss_coeff_defaults if loss_coeffs is None else loss_coeffs
         self.grad_clip = grad_clip
         self.skip_threshold = skip_threshold
+        self.beta_warmup_steps = beta_warmup_steps
         self.balanced_sampling = balanced_sampling
         self.replacement = replacement
 

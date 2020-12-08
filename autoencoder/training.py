@@ -90,7 +90,7 @@ class BaseTrainer(object):
     def iteration(self, epoch: int = 0):
         raise NotImplementedError
 
-    def validate(self, global_step: int = None, verbose: int = True):
+    def validate(self, global_step: int = None, batch_size: int = None, verbose: int = True):
         raise NotImplementedError
 
     def extract_features(self):
@@ -177,6 +177,11 @@ class VAETrainer(BaseTrainer):
         for i in pbar:
             global_step = epoch * nb_iters + i
 
+            # update beta
+            current_beta = min(global_step / self.train_config.beta_warmup_steps, 1.0)
+            self.writer.add_scalar("extras/beta", current_beta, global_step)
+            self.model.update_beta(current_beta)
+
             samples = self.ds_train[list(self.sampler)]
             dff = self.to_cuda(samples['dff'], dtype=torch.float)
             lick = self.to_cuda(samples['lick'], dtype=torch.float)
@@ -214,38 +219,55 @@ class VAETrainer(BaseTrainer):
 
         return cuml_loss / nb_iters
 
-    def validate(self, global_step: int = None, verbose: bool = True):
+    def validate(self, global_step: int = None, batch_size: int = None, verbose: bool = True):
         self.model.eval()
 
-        samples = self.ds_valid[:]
-        dff = self.to_cuda(samples['dff'], dtype=torch.float)
-        lick = self.to_cuda(samples['lick'], dtype=torch.float)
-        name, label, freq = self.to_cuda(
-            [samples['name'], samples['label'], samples['freq']], dtype=torch.long)
-        inputs_dict = dict(name=name, label=label, freq=freq, dff=dff, lick=lick)
+        batch_size = self.train_config.batch_size if batch_size is None else batch_size
 
-        # TODO: this might need to be batched as well
-        with torch.no_grad():
-            outputs_dict, predictions_dict = self.model(inputs_dict)
-            loss, loss_dict = self.model.compute_loss(
-                inputs_dict=inputs_dict,
-                outputs_dict=outputs_dict,
-                predictions_dict=predictions_dict,
-                coeffs=self.train_config.loss_coeffs,
-            )
+        nb_iters = int(np.ceil(len(self.ds_valid) / batch_size))
+        pbar = tqdm(range(nb_iters), desc='validating. . .  ', leave=False)
 
-        # TODO: add a to_np step to everything
-        pred_dffs = list(map(to_np, predictions_dict['dff']))
-        pred_lick = to_np(predictions_dict['lick'])
+        dff_r2s, loss = [], []
+        dff_list, lick_list, label_list, freq_list, name_list = [], [], [], [], []
+        for i in pbar:
+            start = i * batch_size
+            end = min((i + 1) * batch_size, len(self.ds_valid))
+            samples = self.ds_valid[range(start, end)]
+            dff = self.to_cuda(samples['dff'], dtype=torch.float)
+            lick = self.to_cuda(samples['lick'], dtype=torch.float)
+            name, label, freq = self.to_cuda(
+                [samples['name'], samples['label'], samples['freq']], dtype=torch.long)
+            inputs_dict = dict(name=name, label=label, freq=freq, dff=dff, lick=lick)
 
-        accuracy_l = inputs_dict['label'].eq(predictions_dict['indxs_l']).float().mean().item() * 100
-        accuracy_f = inputs_dict['freq'].eq(predictions_dict['indxs_f']).float().mean().item() * 100
-        accuracy_n = inputs_dict['name'].eq(predictions_dict['indxs_n']).float().mean().item() * 100
+            with torch.no_grad():
+                outputs_dict, predictions_dict = self.model(inputs_dict)
+                loss, loss_dict = self.model.compute_loss(
+                    inputs_dict=inputs_dict,
+                    outputs_dict=outputs_dict,
+                    predictions_dict=predictions_dict,
+                    coeffs=self.train_config.loss_coeffs,
+                )
 
-        # Rest is from previous
-        dff_r2s = []
-        for pred, true in zip(pred_dffs, samples['dff']):
-            dff_r2s.append(np.maximum(0.0, r2_score(true, pred, multioutput='raw_values')) * 100)
+            dff_list.append(list(map(to_np, predictions_dict['dff'])))
+            lick_list.append(to_np(predictions_dict['lick']))
+            label_list.append(to_np(predictions_dict['indxs_l']))
+            freq_list.append(to_np(predictions_dict['indxs_f']))
+            name_list.append(to_np(predictions_dict['indxs_n']))
+
+            # Rest is from previous
+            _r2s = []
+            for pred, true in zip(predictions_dict['dff'], samples['dff']):
+                _r2s.append(np.maximum(0.0, r2_score(true[0], to_np(pred[0]), multioutput='raw_values')) * 100)
+            dff_r2s.extend(_r2s)
+
+        lick, label, freq, name = tuple(map(
+            lambda x: np.concatenate(x), [lick_list, label_list, freq_list, name_list]
+        ))
+
+        samples_all = self.ds_valid[:]
+        accuracy_l = (samples_all['label'] == label).mean() * 100
+        accuracy_f = (samples_all['freq'] == freq).mean() * 100
+        accuracy_n = (samples_all['name'] == name).mean() * 100
 
         mean_dff_r2s = [item.mean() for item in dff_r2s]
         mean_dff_r2s = np.mean(mean_dff_r2s)
@@ -263,8 +285,11 @@ class VAETrainer(BaseTrainer):
             print(msg)
 
         output = {
-            'dff': pred_dffs,
-            'lick': pred_lick,
+            'dff': dff_list,
+            'lick': lick,
+            'label': label,
+            'freq': freq,
+            'name': name,
             'dff_r2': dff_r2s,
             'loss': loss,
         }

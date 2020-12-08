@@ -99,8 +99,8 @@ class A1Dataset(Dataset):
             names.append(self.n2i[name])
             labels.append(self.l2i[label])
             freqs.append(self.f2i[freq])
-            dffs.append(dff)
-            licks.append(lick.reshape(1, -1, 1))
+            dffs.append(np.transpose(dff)[np.newaxis, ...])
+            licks.append(lick[np.newaxis, :, np.newaxis])
 
         names, labels, freqs = tuple(map(lambda x: np.array(x), [names, labels, freqs]))
         licks = np.concatenate(licks)
@@ -120,7 +120,7 @@ class A1Dataset(Dataset):
     def _generate_idxs(self, idx):
         if isinstance(idx, int):
             idxs = [idx]
-        elif isinstance(idx, list):
+        elif isinstance(idx, (list, range)):
             idxs = idx
         elif isinstance(idx, slice):
             start, stop, stride = idx.indices(len(self))

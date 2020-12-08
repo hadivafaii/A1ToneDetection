@@ -123,8 +123,8 @@ class VAE(nn.Module):
         return z0, mu0, logsigma0
 
     def make_predictions(self, inputs_dict, outputs_dict):
-        pred_dff_hidden = self.decoder.layers_dff[-1](outputs_dict['output_dff'][-1])
-        pred_dffs = self.embedding.cell_embedding(pred_dff_hidden, inputs_dict['name'], encoding=False)
+        # pred_dff_hidden = self.decoder.layers_dff[-1](outputs_dict['output_dff'][-1])
+        pred_dffs = self.embedding.cell_embedding(outputs_dict['output_dff'][-1], inputs_dict['name'], encoding=False)
         pred_lick = self.decoder.layers_lick[-1](outputs_dict['output_lick'][-1])
         pred_l, pred_f, pred_n, indxs_l, indxs_f, indxs_n = self.predict_labels(outputs_dict['output_label'])
 
@@ -165,7 +165,7 @@ class VAE(nn.Module):
         # reconstruction
         # continuous (normalized by nb_timepoints)
         loss_dff = sum([
-            self.criterion_dff(pred, target) / self.config.nb_timepoints / batch_size
+            self.criterion_dff(pred, target.squeeze()) / self.config.nb_timepoints / batch_size
             for pred, target in zip(predictions_dict['dff'], inputs_dict['dff'])
         ])
         loss_lick = self.criterion_lick(
@@ -248,15 +248,7 @@ class Decoder(nn.Module):
 
     @staticmethod
     def _make_net(config, mode):
-        if mode == 'dff':
-            init_dim = config.h_dim
-            final_dim = config.cell_embedding_dim
-        elif mode == 'lick':
-            init_dim = config.lick_embedding_dim
-            final_dim = 1
-        else:
-            raise NotImplementedError
-
+        init_dim = config.cell_embedding_dim if mode == 'dff' else config.lick_embedding_dim
         num_channels = [init_dim * 2**i for i in range(config.nb_levels + 1)]
         num_channels = num_channels[::-1]
         assert len(num_channels) == config.nb_levels + 1
@@ -279,17 +271,18 @@ class Decoder(nn.Module):
                     mode=config.upsample_mode,
                     align_corners=False),
             )]
-        layers += [nn.Sequential(
-            TemporalBlockTransposed(
-                n_inputs=num_channels[-1],
-                n_outputs=final_dim,
-                kernel_size=config.kernel_size,
-                activation_fn=config.activation_fn,
-                dropout=config.dropout,
-                bias=config.use_bias,
-                linear_output=True),
-            Permute(dims=(0, 2, 1)),
-        )]
+        if mode == 'lick':
+            layers += [nn.Sequential(
+                TemporalBlockTransposed(
+                    n_inputs=num_channels[-1],
+                    n_outputs=1,
+                    kernel_size=config.kernel_size,
+                    activation_fn=config.activation_fn,
+                    dropout=config.dropout,
+                    bias=config.use_bias,
+                    linear_output=True),
+                Permute(dims=(0, 2, 1)),
+            )]
         return layers
 
 
@@ -300,7 +293,7 @@ class Expand(nn.Module):
         assert 0 <= level <= config.nb_levels
         self.level = level
 
-        outplanes_dff = config.h_dim * 2 ** (config.nb_levels - self.level)
+        outplanes_dff = config.cell_embedding_dim * 2 ** (config.nb_levels - self.level)
         outplanes_lick = config.lick_embedding_dim * 2 ** (config.nb_levels - self.level)
         intermediate_size = config.hierarchy_size[self.level]   # TODO: here can also use upsample, but probably not...
         self.deconv_dff = nn.ConvTranspose1d(config.z_dim, outplanes_dff, intermediate_size, bias=config.use_bias)
@@ -377,7 +370,7 @@ class Encoder(nn.Module):
     def __init__(self, config: VAEConfig, verbose: bool = False):
         super(Encoder, self).__init__()
 
-        self.tcn_dff = TCN(config, init_dim=config.h_dim, verbose=verbose)
+        self.tcn_dff = TCN(config, init_dim=config.cell_embedding_dim, verbose=verbose)
         self.tcn_lick = TCN(config, init_dim=config.lick_embedding_dim, verbose=verbose)
 
         if verbose:
@@ -430,33 +423,29 @@ class CellEmbedding(nn.Module):
     def __init__(self, config, verbose=False):
         super(CellEmbedding, self).__init__()
 
-        self.layers = nn.ModuleDict(
-            {str(config.n2i[name]): nn.Linear(nc, config.cell_embedding_dim, bias=False)
+        self.convs = nn.ModuleDict(
+            {str(config.n2i[name]): nn.Conv1d(nc, config.cell_embedding_dim, 1, bias=config.use_bias)
              for name, nc in config.nb_cells.items()}
         )
-        self.biases = nn.ParameterDict(
-            {str(config.n2i[name]): nn.Parameter(torch.zeros(nc, dtype=torch.float))
+        self.deconvs = nn.ModuleDict(
+            {str(config.n2i[name]): nn.ConvTranspose1d(config.cell_embedding_dim, nc, 1, bias=config.use_bias)
              for name, nc in config.nb_cells.items()}
         )
-        # self.gains = nn.ParameterDict(
-        #     {str(config.n2i[name]): nn.Parameter(torch.ones(nc, dtype=torch.float))
-        #      for name, nc in config.nb_cells.items()}
+        # self.mapping_out = nn.Sequential(
+        #     nn.Linear(config.cell_embedding_dim, config.h_dim, bias=False),
+        #     Permute(dims=(0, 2, 1)),
         # )
-        self.mapping_out = nn.Sequential(
-            nn.Linear(config.cell_embedding_dim, config.h_dim, bias=False),
-            Permute(dims=(0, 2, 1)),
-        )
 
         if verbose:
             print_num_params(self)
 
     def forward(self, inputs, names, encoding: bool = True):
-        output = (
-            F.linear(x, self.layers[str(n.item())].weight, None).unsqueeze(0) if encoding else
-            F.linear(x, self.layers[str(n.item())].weight.T, self.biases[str(n.item())])    # Gain?
-            for x, n in zip(inputs, names)
-        )
-        return self.mapping_out(torch.cat(list(output))) if encoding else list(output)
+        if encoding:
+            output = (self.convs[str(n.item())](x) for x, n in zip(inputs, names))
+            return torch.cat(list(output))
+        else:
+            output = (self.deconvs[str(n.item())](inputs[[i]]) for i, n in enumerate(names))
+            return list(output)
 
 
 class TemporalConvNet(nn.Module):
