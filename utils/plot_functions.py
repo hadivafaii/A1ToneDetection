@@ -1167,19 +1167,87 @@ def mk_pie_plot(summary_data: dict, save_file=None, display=True, figsize=(18, 1
     return fig, ax_arr
 
 
-def mk_data_summary_plot(df, save_file=None, display=True, figsize=(18, 13), dpi=100):
+def mk_single_cell_plot(df, name, cell=None, trials=None, save_file=None, display=True, figsize=(16, 7), dpi=100):
+    nt = len(df.timepoint.unique())
+    df = df.loc[df.name == name]
+    nc = len(df.cell_indx.unique())
+    trials = ['hit', 'miss', 'correctreject', 'falsealarm'] if trials is None else trials
+
+    cells = range(nc) if cell is None else [cell]
+
+    figs, sups, axes = [], [], []
+    for cc in tqdm(cells):
+        num_trials = {}
+        dff_list = []
+        lick_list = []
+        for trial in trials:
+            selected_df = df.loc[df.trial == trial]
+            ntrials = int(len(selected_df) / nc / nt)
+            num_trials[trial] = ntrials
+
+            dff = selected_df.dff.to_numpy().reshape(nt, ntrials, nc)
+            lick = selected_df.lick.to_numpy().reshape(nt, ntrials, nc)
+            dff_list.append(dff[:, :, cc].T)
+            lick_list.append(lick.mean(-1).T)
+
+        dff = np.concatenate(dff_list)
+        lick = np.concatenate(lick_list)
+
+        vminmax = np.max(abs(dff))
+        aspect = 0.7 * dff.shape[-1] / dff.shape[0]
+
+        sns.set_style('white')
+        fig, ax_arr = plt.subplots(1, 2, figsize=figsize, dpi=dpi, sharex='all', sharey='all')
+        im1 = ax_arr[0].imshow(
+            dff, cmap='seismic', aspect=aspect, interpolation='bilinear',
+            vmin=-abs(vminmax), vmax=abs(vminmax))
+        ax_arr[0].axvspan(30, 60, facecolor='lightgrey', alpha=0.5)
+        ax_arr[0].set_xlabel('time', fontsize=12)
+        ax_arr[0].set_ylabel('trial', fontsize=12)
+        ax_arr[0].set_title('dff, cell # {:d}'.format(cc), fontsize=12)
+
+        im2 = ax_arr[1].imshow(lick, cmap='Greys_r', aspect=aspect, interpolation=None)
+        ax_arr[1].axvspan(30, 60, facecolor='lightgrey', alpha=0.5)
+        ax_arr[1].set_xlabel('time', fontsize=12)
+        ax_arr[1].set_title('licks', fontsize=12)
+
+        cumulative = 0
+        for trial, ntrial in num_trials.items():
+            cumulative += ntrial
+            ax_arr[0].axhline(cumulative - 0.5, color='k', lw=2, ls=':')
+            ax_arr[1].axhline(cumulative - 0.5, color='gold', lw=2, ls=':')
+
+        msg = 'trial to trial variability of cell # {:d} from {:s}\n'
+        msg += 'trials:  {}'
+        msg = msg.format(cc, name, list(num_trials.keys()))
+        sup = fig.suptitle(msg, fontsize=15)
+
+        plt.colorbar(im1, ax=ax_arr[0], fraction=0.033, pad=0.03)
+        plt.colorbar(im2, ax=ax_arr[1], fraction=0.033, pad=0.03)
+        fig.tight_layout()
+
+        figs.append(fig)
+        sups.append(sup)
+        axes.append(ax_arr)
+
+    save_fig(figs, sups, save_file, display, multi=len(cells) > 1)
+    return figs, axes, sups
+
+
+def mk_data_summary_plot(df, include_trials=None, save_file=None, display=True, figsize=(23, 17), dpi=100):
     name = df.name.unique()
     nt = len(df.timepoint.unique())
     xticks = range(0, nt + 1, 15)
     tag_colors = ['deeppink', 'lightseagreen']
+    if include_trials is None:
+        include_trials = ['hit', 'miss', 'correctreject', 'falsealarm', 'passive']
 
     sns.set_style("whitegrid")
     fig = plt.figure(figsize=figsize, dpi=dpi)
-    gs = GridSpec(nrows=4, ncols=4, height_ratios=[0.3, 0.3, 0.5, 0.5])
+    gs = GridSpec(nrows=4, ncols=len(include_trials), height_ratios=[0.3, 0.2, 0.3, 0.4])
 
-    desired_trials = ['hit', 'miss', 'correctreject', 'falsealarm']
     ax_list = []
-    for i, trial in tqdm(enumerate(desired_trials), total=len(desired_trials), leave=False):
+    for i, trial in tqdm(enumerate(include_trials), total=len(include_trials), leave=False):
         if i == 0:
             ax0 = fig.add_subplot(gs[0, i])
             ax1 = fig.add_subplot(gs[1, i], sharex=ax0)
@@ -1212,27 +1280,17 @@ def mk_data_summary_plot(df, save_file=None, display=True, figsize=(18, 13), dpi
             ls=':',
             ax=ax0,
         )
-        if trial in ['hit', 'miss']:
-            sns.lineplot(
-                x="timepoint",
-                y="target_licks",
-                data=selected_df,
-                color=COLORS[i],
-                lw=1.5,
-                ax=ax1,
-            )
-        elif trial in ['correctreject', 'falsealarm']:
-            sns.lineplot(
-                x="timepoint",
-                y="nontarget_licks",
-                data=selected_df,
-                color=COLORS[i],
-                lw=1.5,
-                ax=ax1,
-            )
+        sns.lineplot(
+            x="timepoint",
+            y="lick",
+            data=selected_df,
+            color=COLORS[i],
+            lw=1.5,
+            ax=ax1,
+        )
 
     axes = np.array(ax_list).T
-    for i in range(len(desired_trials)):
+    for i in range(len(include_trials)):
         ax0, ax1 = axes[:, i]
         ax0.set_xlabel('')
         if i == 0:
@@ -1254,7 +1312,7 @@ def mk_data_summary_plot(df, save_file=None, display=True, figsize=(18, 13), dpi
         palette=tag_colors,
         multiple="dodge",
         stat='count',
-        shrink=.6,
+        shrink=.3,
         ax=ax2,
     )
     ax2.set_xlabel('')

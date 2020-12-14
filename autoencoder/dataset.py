@@ -170,7 +170,7 @@ def _create_ds(config, train_config):
         good_cells_p = np.array(passive["good_cells"], dtype=int)
 
         good_cells = set(good_cells_b).intersection(set(good_cells_p))
-        good_cells = list(good_cells)
+        good_cells = sorted(list(good_cells))
 
         xy = np.array(behavior["xy"], dtype=float)[good_cells]  # TODO: figure out xy
         dff_b = np.array(behavior["dff"], dtype=float)[..., good_cells]

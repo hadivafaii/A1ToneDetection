@@ -29,8 +29,7 @@ def combine_dfs(load_dir: str) -> pd.DataFrame:
 
 def summarize_data(load_file: str, verbose: bool = True, save_file: str = None):
     all_trial_types = [
-        'correctreject', 'early', 'earlyfalsealarm', 'earlyhit',
-        'falsealarm', 'hit', 'miss', 'target', 'nontarget']
+        'correctreject', 'early', 'earlyfalsealarm', 'earlyhit', 'falsealarm', 'hit', 'miss']
     stim_info_types = ['stimfrequency', 'stimlevel']
 
     base_cols = ['Date', 'Subject Name', 'Good Cells', 'Num Trials']
@@ -204,13 +203,23 @@ def process_data(load_file: str, save_dir: str, normalize: bool = False):
     for name in pbar:
         pbar.set_description(name)
         behavior = f[name]['behavior']
-        dff = np.array(behavior['dff'], dtype=float)
+        passive = f[name]['passive']
+
+        good_cells_b = np.array(behavior["good_cells"], dtype=int)
+        good_cells_p = np.array(passive["good_cells"], dtype=int)
+        good_cells = set(good_cells_b).intersection(set(good_cells_p))
+        good_cells = sorted(list(good_cells))
+
+        # behavior
         targetlick = np.array(behavior['targetlick'], dtype=int)
         nontargetlick = np.array(behavior['nontargetlick'], dtype=int)
-        good_cells = np.array(behavior['good_cells'], dtype=int)
+        lick = targetlick + nontargetlick
 
-        dff_good = dff[:, :, good_cells]
+        dff_good = np.array(behavior['dff'], dtype=float)[:, :, good_cells]
         nt, _, nc = dff_good.shape
+
+        stimfrequency = np.array(behavior['trial_info']['stimfrequency'], dtype=int)
+        stimlevel = np.array(behavior['trial_info']['stimlevel'], dtype=int)
 
         if normalize:
             dff_good = zscore(dff_good)
@@ -219,14 +228,14 @@ def process_data(load_file: str, save_dir: str, normalize: bool = False):
         for k, v in behavior['trial_info'].items():
             trial_data = np.array(v, dtype=int)
             trial_size = sum(trial_data == 1)
-            if not trial_size:
+            if not trial_size or 'target' in k:
                 continue
 
-            dff = dff_good[:, trial_data == 1, :]
+            dff_ = dff_good[:, trial_data == 1, :]
             max_activation_list = []
             cell_tag_list = []
             for cell in range(nc):
-                max_act = max(dff[..., cell].mean(1), key=abs)
+                max_act = max(dff_[..., cell].mean(1), key=abs)
                 max_activation_list.append(max_act)
                 if max_act >= 0:
                     tag = "EXC"
@@ -236,31 +245,37 @@ def process_data(load_file: str, save_dir: str, normalize: bool = False):
 
             max_activations = np.expand_dims(max_activation_list, 0)
             max_activations = np.expand_dims(max_activations, 0)
-            max_activations = np.repeat(max_activations, trial_size, axis=1)
             max_activations = np.repeat(max_activations, nt, axis=0)
+            max_activations = np.repeat(max_activations, trial_size, axis=1)
 
             cell_tags = np.expand_dims(cell_tag_list, 0)
             cell_tags = np.expand_dims(cell_tags, 0)
-            cell_tags = np.repeat(cell_tags, trial_size, axis=1)
             cell_tags = np.repeat(cell_tags, nt, axis=0)
-
-            time_points = np.expand_dims(np.arange(nt), -1)
-            time_points = np.expand_dims(time_points, -1)
-            time_points = np.repeat(time_points, trial_size, axis=-1)
-            time_points = np.repeat(time_points, nc, axis=-1)
+            cell_tags = np.repeat(cell_tags, trial_size, axis=1)
 
             cell_indxs = np.expand_dims(np.arange(nc), 0)
             cell_indxs = np.expand_dims(cell_indxs, 0)
-            cell_indxs = np.repeat(cell_indxs, trial_size, axis=1)
             cell_indxs = np.repeat(cell_indxs, nt, axis=0)
+            cell_indxs = np.repeat(cell_indxs, trial_size, axis=1)
 
-            target_licks = targetlick[:, trial_data == 1]
-            target_licks = np.expand_dims(target_licks, axis=-1)
-            target_licks = np.repeat(target_licks, nc, axis=-1)
+            time_points = np.expand_dims(np.arange(nt), -1)
+            time_points = np.expand_dims(time_points, -1)
+            time_points = np.repeat(time_points, trial_size, axis=1)
+            time_points = np.repeat(time_points, nc, axis=-1)
 
-            nontarget_licks = nontargetlick[:, trial_data == 1]
-            nontarget_licks = np.expand_dims(nontarget_licks, axis=-1)
-            nontarget_licks = np.repeat(nontarget_licks, nc, axis=-1)
+            stimfrequency_ = np.expand_dims(stimfrequency[trial_data == 1], 0)
+            stimfrequency_ = np.expand_dims(stimfrequency_, -1)
+            stimfrequency_ = np.repeat(stimfrequency_, nt, axis=0)
+            stimfrequency_ = np.repeat(stimfrequency_, nc, axis=-1)
+
+            stimlevel_ = np.expand_dims(stimlevel[trial_data == 1], 0)
+            stimlevel_ = np.expand_dims(stimlevel_, -1)
+            stimlevel_ = np.repeat(stimlevel_, nt, axis=0)
+            stimlevel_ = np.repeat(stimlevel_, nc, axis=-1)
+
+            lick_ = lick[:, trial_data == 1]
+            lick_ = np.expand_dims(lick_, axis=-1)
+            lick_ = np.repeat(lick_, nc, axis=-1)
 
             data_dict = {
                 "name": [name] * nt * trial_size * nc,
@@ -269,15 +284,88 @@ def process_data(load_file: str, save_dir: str, normalize: bool = False):
                 "cell_tag": cell_tags.flatten(),
                 "max_act": max_activations.flatten(),
                 "trial": [k] * nt * trial_size * nc,
-                "dff": dff.flatten(),
-                "target_licks": target_licks.flatten(),
-                "nontarget_licks": nontarget_licks.flatten(),
+                "stimfreq": stimfrequency_.flatten(),
+                "stimlevel": stimlevel_.flatten(),
+                "dff": dff_.flatten(),
+                "lick": lick_.flatten(),
             }
             dictdata_list.append(data_dict)
+
+        # passive
+        dff_good = np.array(passive['dff'], dtype=float)[:, :, good_cells]
+        nt, _, nc = dff_good.shape
+
+        stimfrequency = np.array(passive['trial_info']['stimfrequency'], dtype=int)
+        stimlevel = np.array(passive['trial_info']['stimlevel'], dtype=int)
+
+        for freq in sorted(np.unique(stimfrequency)):
+            trial_size = sum(stimfrequency == freq)
+
+            dff_ = dff_good[:, stimfrequency == freq, :]
+            max_activation_list = []
+            cell_tag_list = []
+            for cell in range(nc):
+                max_act = max(dff_[..., cell].mean(1), key=abs)
+                max_activation_list.append(max_act)
+                if max_act >= 0:
+                    tag = "EXC"
+                else:
+                    tag = "SUP"
+                cell_tag_list.append(tag)
+
+            max_activations = np.expand_dims(max_activation_list, 0)
+            max_activations = np.expand_dims(max_activations, 0)
+            max_activations = np.repeat(max_activations, nt, axis=0)
+            max_activations = np.repeat(max_activations, trial_size, axis=1)
+
+            cell_tags = np.expand_dims(cell_tag_list, 0)
+            cell_tags = np.expand_dims(cell_tags, 0)
+            cell_tags = np.repeat(cell_tags, nt, axis=0)
+            cell_tags = np.repeat(cell_tags, trial_size, axis=1)
+
+            cell_indxs = np.expand_dims(np.arange(nc), 0)
+            cell_indxs = np.expand_dims(cell_indxs, 0)
+            cell_indxs = np.repeat(cell_indxs, nt, axis=0)
+            cell_indxs = np.repeat(cell_indxs, trial_size, axis=1)
+
+            time_points = np.expand_dims(np.arange(nt), -1)
+            time_points = np.expand_dims(time_points, -1)
+            time_points = np.repeat(time_points, trial_size, axis=1)
+            time_points = np.repeat(time_points, nc, axis=-1)
+
+            stimfrequency_ = np.expand_dims(stimfrequency[stimfrequency == freq], 0)
+            stimfrequency_ = np.expand_dims(stimfrequency_, -1)
+            stimfrequency_ = np.repeat(stimfrequency_, nt, axis=0)
+            stimfrequency_ = np.repeat(stimfrequency_, nc, axis=-1)
+
+            stimlevel_ = np.expand_dims(stimlevel[stimfrequency == freq], 0)
+            stimlevel_ = np.expand_dims(stimlevel_, -1)
+            stimlevel_ = np.repeat(stimlevel_, nt, axis=0)
+            stimlevel_ = np.repeat(stimlevel_, nc, axis=-1)
+
+            data_dict = {
+                "name": [name] * nt * trial_size * nc,
+                "timepoint": time_points.flatten(),
+                "cell_indx": cell_indxs.flatten(),
+                "cell_tag": cell_tags.flatten(),
+                "max_act": max_activations.flatten(),
+                "trial": ['passive'] * nt * trial_size * nc,
+                "stimfreq": stimfrequency_.flatten(),
+                "stimlevel": stimlevel_.flatten(),
+                "dff": dff_.flatten(),
+                "lick": [np.nan] * nt * trial_size * nc,
+            }
+            dictdata_list.append(data_dict)
+
+        # make the final df
         df = pd.DataFrame.from_dict(merge_dicts(dictdata_list))
         save_obj(obj=df, file_name="{}.df".format(name), save_dir=save_dir, mode='df', verbose=True)
     f.close()
     print('[PROGRESS] processing done.')
+    print('[PROGRESS] combining all dfs.')
+    df_all = combine_dfs(load_dir=save_dir)
+    save_obj(obj=df_all, file_name="all.df", save_dir=save_dir, mode='df', verbose=True)
+    print('[PROGRESS] done.')
 
 
 def organize_data(base_dir: str, nb_std: int = 1):
@@ -467,7 +555,7 @@ def _setup_args() -> argparse.Namespace:
         "--base_dir",
         help="base dir where project is saved",
         type=str,
-        default='Documents/PROJECTS/Kanold',
+        default='Documents/A1',
     )
 
     return parser.parse_args()

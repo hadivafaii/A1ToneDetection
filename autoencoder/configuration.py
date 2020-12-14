@@ -3,7 +3,6 @@ import h5py
 import numpy as np
 from typing import List, Dict
 from os.path import join as pjoin
-from utils.process import summarize_data
 
 
 class BaseConfig(object):
@@ -25,11 +24,11 @@ class BaseConfig(object):
         super(BaseConfig, self).__init__()
         # trial types and frequencies to include in analysis
         include_trials_default = ['hit', 'miss', 'correctreject', 'falsealarm', 'passive']
-        # include_freqs_default = [7000, 9899, 14000, 19799, 7071, 8000, 10000, 14142, 20000, 22627]
-        include_freqs_behavior = [7000, 9899, 14000, 19799]
-        include_freqs_passive = [4000, 5000, 5657, 7071, 8000, 10000, 11314, 14142,
-                                 16000, 20000, 22627, 28284, 32000, 40000, 45255, 56569]
-        include_freqs_default = sorted(include_freqs_behavior + include_freqs_passive)
+        # include_freqs_default = [
+        #     4000, 5000, 5657, 7071, 8000, 10000, 11314, 14142,
+        #     16000, 20000, 22627, 28284, 32000, 40000, 45255, 56569,
+        # ]
+        include_freqs_default = [5000, 7071, 10000, 14142, 20000, 28284]  # only passive
         self.include_trials = include_trials_default if include_trials is None else include_trials
         self.include_freqs = include_freqs_default if include_freqs is None else include_freqs
 
@@ -69,7 +68,7 @@ class BaseConfig(object):
                 good_cells_b = np.array(behavior["good_cells"], dtype=int)
                 good_cells_p = np.array(passive["good_cells"], dtype=int)
                 good_cells = set(good_cells_b).intersection(set(good_cells_p))
-                good_cells = list(good_cells)
+                good_cells = sorted(list(good_cells))
                 nb_cells[name] = len(good_cells)
             self.nb_cells = nb_cells
             f.close()
@@ -78,19 +77,24 @@ class BaseConfig(object):
         # labels
         if not len(self.l2i):
             self.l2i = {lbl: i for i, lbl in enumerate(self.include_trials)}
-        if not len(self.i2l):
             self.i2l = {i: lbl for lbl, i in self.l2i.items()}
 
         # stim freq
         if not len(self.f2i):
-            self.f2i = {freq: i for i, freq in enumerate(self.include_freqs)}
-        if not len(self.i2f):
-            self.i2f = {i: freq for freq, i in self.f2i.items()}
+            f2i = {freq: i for i, freq in enumerate(self.include_freqs)}
+            behavior_freqs = {
+                7000: f2i[7071],
+                9899: f2i[10000],
+                14000: f2i[14142],
+                19799: f2i[20000],
+            }
+            f2i.update(behavior_freqs)
+            self.f2i = dict(sorted(f2i.items()))
+            self.i2f = {self.f2i[freq]: freq for freq in self.include_freqs}
 
         # expt names
         if not len(self.n2i):
             self.n2i = {name: i for i, name in enumerate(self.nb_cells.keys())}
-        if not len(self.i2n):
             self.i2n = {i: name for name, i in self.n2i.items()}
 
 

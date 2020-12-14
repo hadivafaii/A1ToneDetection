@@ -14,7 +14,8 @@ class VAE(nn.Module):
         self.decoder = Decoder(config, verbose=verbose)
         self.condition_inf = nn.ModuleList([ConditionINF(config, level=i) for i in range(config.nb_levels)])
 
-        self.criterion_dff = NormalizedMSE(mode='var', reduction='sum')
+        # self.criterion_dff = NormalizedMSE(mode='var', reduction='sum')
+        self.criterion_dff = nn.MSELoss(reduction='sum')
         self.criterion_lick = nn.BCEWithLogitsLoss(reduction='sum')
         self.criterion_l = nn.CrossEntropyLoss(reduction='sum')
         self.criterion_f = nn.CrossEntropyLoss(reduction='sum')
@@ -387,13 +388,13 @@ class Embedding(nn.Module):
         super(Embedding, self).__init__()
 
         self.label_embedding = nn.Embedding(
-            num_embeddings=len(config.l2i),
+            num_embeddings=len(config.i2l),
             embedding_dim=config.label_embedding_dim,)
         self.stim_embedding = nn.Embedding(
-            num_embeddings=len(config.f2i),
+            num_embeddings=len(config.i2f),
             embedding_dim=config.label_embedding_dim,)
         self.name_embedding = nn.Embedding(
-            num_embeddings=len(config.n2i),
+            num_embeddings=len(config.i2n),
             embedding_dim=config.label_embedding_dim,)
 
         self.lick_embedding = nn.Sequential(

@@ -6,15 +6,7 @@ start_time=${3:-30}
 end_time=${4:-75}
 filter_sz=${5:-5}
 threshold=${6:-0.9}
-base_dir=${7:-null}
-
-if [[ $base_dir == "null" ]]; then
-  if [[ $(uname -n) == "V1" ]]; then
-    base_dir="Documents/Kanold"
-  elif [[ $(uname -n) == "SigurRos" ]]; then
-    base_dir="Documents/PROJECTS/Kanold"
-  fi
-fi
+base_dir=${7:-"Documents/A1"}
 
 cd ..
 

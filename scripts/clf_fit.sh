@@ -3,15 +3,7 @@
 cm=$1
 clf_type=${2:-svm}
 penalty=${3:-l1}
-base_dir=${4:-null}
-
-if [[ $base_dir == "null" ]]; then
-  if [[ $(uname -n) == "V1" ]]; then
-    base_dir="Documents/Kanold"
-  elif [[ $(uname -n) == "SigurRos" ]]; then
-    base_dir="Documents/PROJECTS/Kanold"
-  fi
-fi
+base_dir=${4:-"Documents/A1"}
 
 echo "cm: $cm"
 echo "clf_type: $clf_type"
