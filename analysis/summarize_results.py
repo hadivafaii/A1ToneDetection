@@ -1,12 +1,10 @@
 import sys
 import argparse
-from tqdm import tqdm
-from os.path import join as pjoin
 from .lda_analysis import LDA
 
 sys.path.append('..')
-from utils.generic_utils import get_tasks, load_dfs
 from utils.animation import mk_coarse_grained_plot
+from utils.generic_utils import *
 from utils.plot_functions import *
 
 

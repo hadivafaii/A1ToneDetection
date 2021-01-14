@@ -9,10 +9,56 @@ from pathlib import Path
 from itertools import chain
 from operator import methodcaller
 from collections import defaultdict
+from typing import List, Dict, Any, Tuple
+from sklearn.preprocessing import normalize
 from os.path import join as pjoin
 from datetime import datetime
-from typing import List, Dict, Any
+from scipy import spatial
 from tqdm import tqdm
+
+
+def orthonormalize(u: np.ndarray, orthogonal: bool = True, normal: bool = True):
+    x = u.copy()
+    assert x.shape[1] >= 2, "must provide more than 2 vectors"
+
+    if orthogonal:
+        a = x[:, 0]
+        b = x[:, 1].copy()
+        b -= (np.dot(a, b) / np.dot(a, a)) * a
+
+        if x.shape[1] == 2:
+            x_orth = np.array([a, b]).T
+        elif x.shape[1] == 3:
+            c = x[:, 2].copy()
+            c -= (np.dot(a, c) / np.dot(a, a)) * a
+            c -= (np.dot(b, c) / np.dot(b, b)) * b
+            x_orth = np.array([a, b, c]).T
+        else:
+            raise NotImplementedError
+        x = x_orth
+
+    if normal:
+        x = normalize(x, axis=0)
+
+    return x
+
+
+def cos_similarity(i, ii):
+    return 1 - spatial.distance.cosine(i, ii)
+
+
+def train_test_split(x: np.ndarray, labels: pd.Series):
+    train_test = np.zeros(len(x), dtype=bool)
+    for lbl in labels.unique():
+        indxs = np.where(labels == lbl)[0]
+        _tst = indxs[:len(indxs)//5]
+        train_test[_tst] = True
+
+    tst_indxs = np.where(train_test)[0]
+    trn_indxs = np.where(~train_test)[0]
+
+    assert not set(tst_indxs).intersection(set(trn_indxs))
+    return tst_indxs, trn_indxs
 
 
 def load_dfs(load_dir: str) -> Dict[str, pd.DataFrame]:
@@ -83,6 +129,25 @@ def downsample(data, xy, xbins, ybins, normalize=True):
         return np.divide(downsampled, np.maximum(_norm, 1e-8))
     else:
         return downsampled
+
+
+def get_dirs(nb_std: int = 1, base_dir: str = 'Documents/A1'):
+    base_dir = pjoin(os.environ['HOME'], base_dir)
+    data_dir = pjoin(base_dir, 'Data')
+    results_dir = pjoin(base_dir, 'results')
+    processed_dir = pjoin(base_dir, 'python_processed')
+    h_load_file = pjoin(processed_dir, "organized_nb_std={:d}.h5".format(nb_std))
+    df_load_file = pjoin(processed_dir, 'processed_nb_std={:d}'.format(nb_std), "all.df")
+
+    dirs_dict = {
+        'base_dir': base_dir,
+        'data_dir': data_dir,
+        'results_dir': results_dir,
+        'processed_dir': processed_dir,
+        'h_load_file': h_load_file,
+        'df_load_file': df_load_file,
+    }
+    return dirs_dict
 
 
 def get_tasks(include_passive: bool = False):

@@ -1,13 +1,8 @@
-import os
 import sys
 import h5py
 import random
 import logging
 import argparse
-import numpy as np
-from tqdm import tqdm
-from typing import List, Dict
-from os.path import join as pjoin
 
 from sklearn.svm import LinearSVC
 from sklearn.neural_network import MLPClassifier
@@ -15,7 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import matthews_corrcoef, accuracy_score, f1_score
 
 sys.path.append('..')
-from utils.generic_utils import now, merge_dicts, save_obj, get_tasks
+from utils.generic_utils import *
 from .clf_process import combine_fits
 
 import warnings

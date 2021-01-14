@@ -1,20 +1,99 @@
-import os
 import h5py
-import pickle
 import argparse
-import numpy as np
-import pandas as pd
-from typing import List, Tuple
-from pathlib import Path
 from scipy.stats import zscore
-from tqdm import tqdm
-from os.path import join as pjoin
 from prettytable import PrettyTable
 from collections import Counter
-from .generic_utils import merge_dicts, save_obj, reset_df
+from .generic_utils import *
 import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_style('darkgrid')
+
+
+def bag_of_neurons(
+        h_load_file: str,
+        trials: List[str] = None,
+        freqs: List[str] = None,):
+
+    trials = ['hit', 'miss', 'correctreject', 'falsealarm'] if trials is None else trials
+    freqs = [7000, 9899, 14000, 19799] if freqs is None else freqs
+
+    l2i = {trial: i for i, trial in enumerate(trials)}
+    i2l = {i: lbl for lbl, i in l2i.items()}
+
+    f2i = {freq: i for i, freq in enumerate(freqs)}
+    i2f = {i: freq for freq, i in f2i.items()}
+
+    dff_trial = []
+    dff_freq = []
+    df_trial = pd.DataFrame()
+    df_freq = pd.DataFrame()
+
+    f = h5py.File(h_load_file, 'r')
+    for name in f:
+        behavior = f[name]['behavior']
+        passive = f[name]['passive']
+
+        good_cells_b = np.array(behavior["good_cells"], dtype=int)
+        good_cells_p = np.array(passive["good_cells"], dtype=int)
+        good_cells = set(good_cells_b).intersection(set(good_cells_p))
+        good_cells = sorted(list(good_cells))
+
+        stimfrequency = np.array(behavior['trial_info']['stimfrequency'], dtype=int)
+        dff = np.array(behavior['dff'], dtype=float)[..., good_cells]
+        nt, _, nc = dff.shape
+
+        for trial in trials:
+            indxs = np.where(np.array(behavior['trial_info'][trial]) == 1)[0]
+            dff_trial.append(dff[:, indxs, :].reshape(nt, -1))
+
+            cell_indx = np.expand_dims(range(nc), 0)
+            cell_indx = np.repeat(cell_indx, len(indxs), axis=0)
+
+            data_dict = {
+                'cell_indx': cell_indx.flatten(),
+                'trial': [trial] * len(indxs) * nc,
+                'name': [name] * len(indxs) * nc,
+            }
+            df_trial = pd.concat([df_trial, pd.DataFrame.from_dict(data_dict)])
+
+        for freq in freqs:
+            indxs = np.where(stimfrequency == freq)[0]
+            dff_freq.append(dff[:, indxs, :].reshape(nt, -1))
+
+            cell_indx = np.expand_dims(range(nc), 0)
+            cell_indx = np.repeat(cell_indx, len(indxs), axis=0)
+
+            data_dict = {
+                'cell_indx': cell_indx.flatten(),
+                'freq': [freq] * len(indxs) * nc,
+                'name': [name] * len(indxs) * nc,
+            }
+            df_freq = pd.concat([df_freq, pd.DataFrame.from_dict(data_dict)])
+    f.close()
+
+    dff = np.concatenate(dff_trial, axis=-1).T
+    df = reset_df(df_trial)
+    tst_, trn_ = train_test_split(x=dff, labels=df.trial)
+    output_trial = {
+        'dff': dff,
+        'df': df,
+        'str2int': l2i,
+        'int2str': i2l,
+        'tst_indxs': tst_,
+        'trn_indxs': trn_,
+    }
+    dff = np.concatenate(dff_freq, axis=-1).T
+    df = reset_df(df_freq)
+    tst_, trn_ = train_test_split(x=dff, labels=df.freq)
+    output_freq = {
+        'dff': dff,
+        'df': df,
+        'str2int': f2i,
+        'int2str': i2f,
+        'tst_indxs': tst_,
+        'trn_indxs': trn_,
+    }
+    return output_trial, output_freq
 
 
 def combine_dfs(load_dir: str) -> pd.DataFrame:
