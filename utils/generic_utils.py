@@ -47,15 +47,14 @@ def cos_similarity(i, ii):
     return 1 - spatial.distance.cosine(i, ii)
 
 
-def train_test_split(x: np.ndarray, labels: pd.Series):
-    train_test = np.zeros(len(x), dtype=bool)
-    for lbl in labels.unique():
-        indxs = np.where(labels == lbl)[0]
-        _tst = indxs[:len(indxs)//5]
-        train_test[_tst] = True
+def train_test_split(n_samples: int, xv_folds: int = 5, which_fold: int = 0):
+    which_fold = which_fold % xv_folds
+    num_tst_indxs = int(np.floor(n_samples / xv_folds))
 
-    tst_indxs = np.where(train_test)[0]
-    trn_indxs = np.where(~train_test)[0]
+    start = which_fold * num_tst_indxs
+    stop = min((which_fold + 1) * num_tst_indxs, n_samples)
+    tst_indxs = range(start, stop)
+    trn_indxs = np.delete(np.arange(n_samples), tst_indxs)
 
     assert not set(tst_indxs).intersection(set(trn_indxs))
     return tst_indxs, trn_indxs
@@ -82,7 +81,7 @@ def load_dfs(load_dir: str) -> Dict[str, pd.DataFrame]:
 
 def smoothen(arr: np.ndarray, filter_sz: int = 5):
     shape = arr.shape
-    assert 1 <= len(shape) <= 2, "1<= dim <= 2d"
+    assert 1 <= len(shape) <= 2, "1 <= dim <= 2d"
 
     kernel = np.ones(filter_sz) / filter_sz
     if len(shape) == 1:
@@ -206,11 +205,11 @@ def rm_dirs(base_dir: str, dirs: List[str], verbose: bool = True):
         print("[PROGRESS] removed {} folders at {:s}".format(dirs, base_dir))
 
 
-def now(exclude_hour_min: bool = False):
+def now(exclude_hour_min: bool = True):
     if exclude_hour_min:
-        return datetime.now().strftime("[%Y_%m_%d]")
+        return datetime.now().strftime("(%Y_%m_%d)")
     else:
-        return datetime.now().strftime("[%Y_%m_%d_%H-%M]")
+        return datetime.now().strftime("(%Y_%m_%d_%H-%M)")
 
 
 def isfloat(string: str):
