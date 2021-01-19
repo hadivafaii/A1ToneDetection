@@ -165,13 +165,14 @@ def get_tasks(include_passive: bool = False):
     return tasks
 
 
-def reset_df(df: pd.DataFrame) -> pd.DataFrame:
+def reset_df(df: pd.DataFrame, downcast: str = "integer") -> pd.DataFrame:
     df.reset_index(drop=True, inplace=True)
-    df = df.apply(pd.to_numeric, downcast="integer", errors="ignore")
+    if downcast != 'none':
+        df = df.apply(pd.to_numeric, downcast=downcast, errors="ignore")
     return df
 
 
-def save_obj(obj: Any, file_name: str, save_dir: str, mode: str = 'np', verbose: bool = True):
+def save_obj(obj: Any, file_name: str, save_dir: str = '.', mode: str = 'np', verbose: bool = True):
     _allowed_modes = ['np', 'df', 'pkl', 'joblib']
     with open(pjoin(save_dir, file_name), 'wb') as f:
         if mode == 'np':

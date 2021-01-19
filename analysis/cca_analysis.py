@@ -9,11 +9,193 @@ sys.path.append('..')
 from utils.generic_utils import *
 from tqdm.notebook import tqdm
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_style('whitegrid')
+
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
-def fit_cca_loop(h_load_file: str, n_seeds: int = 3, save_file: str = None, **kwargs):
+def fit_cca_loop(
+        h_load_file: str,
+        rescale: bool = False,
+        save_file: str = None,
+        **kwargs, ):
+    save_file = 'results_cca_{}.df'.format(now()) if save_file is None else save_file
+    default_args = {
+        'min_nb_trials': 100,
+        'target': True,
+        'global_normalize': True,
+        'augment_data': False,
+        'xv_folds': 5,
+        'time_range': range(45, 46),
+        'num_ccs': np.arange(5, 91, 5),
+        'cca_regs': np.logspace(-3, -1.5, num=20),
+        'cutoffs': np.logspace(-18, -12, num=3),
+    }
+    for k in default_args:
+        if k in kwargs:
+            default_args[k] = kwargs[k]
+
+    results = pd.DataFrame()
+    warnings.filterwarnings('ignore', category=RuntimeWarning)
+    for fold in tqdm(range(default_args['xv_folds']), leave=False):
+        data_trn, data_tst = prepare_cca_data(
+            h_load_file=h_load_file,
+            min_nb_trials=default_args['min_nb_trials'],
+            target=default_args['target'],
+            global_normalize=default_args['global_normalize'],
+            augment_data=default_args['augment_data'],
+            xv_folds=default_args['xv_folds'],
+            which_fold=fold,
+            time_range=default_args['time_range'],
+            verbose=False,
+        )
+        train_list, y_trn = data_trn['processed'], data_trn['labels']
+        test_list, y_tst = data_tst['processed'], data_tst['labels']
+
+        for n_components in tqdm(default_args['num_ccs'], leave=False):
+            train_list_centered = [
+                (item - item.mean()) / np.sqrt(n_components) if rescale else item - item.mean()
+                for item in train_list
+            ]
+            for reg in tqdm(default_args['cca_regs'], leave=False):
+                for cutoff in tqdm(default_args['cutoffs'], leave=False):
+                    cca = rcca.CCA(
+                        kernelcca=True,
+                        ktype='linear',
+                        numCC=n_components,
+                        reg=reg,
+                        cutoff=cutoff,
+                        verbose=False,
+                    )
+                    cca.train(train_list_centered)
+                    testcorrs = cca.validate(test_list)
+
+                    corrs = []
+                    for item in testcorrs:
+                        corrs.append(np.mean(np.abs(item)))
+                    pred_r = np.mean(corrs)
+
+                    data_dict = {
+                        'fold': [fold],
+                        'n_components': [n_components],
+                        'cca_reg': [reg],
+                        'cutoff': [cutoff],
+                        'metric': ['pred_r'],
+                        'value': [pred_r],
+                    }
+                    results = pd.concat([results, pd.DataFrame.from_dict(data_dict)])
+            save_obj(obj=results, file_name=save_file, save_dir='.', mode='df', verbose=False)
+
+    results = reset_df(results, downcast='none')
+    save_obj(obj=results, file_name=save_file, save_dir='.', mode='df', verbose=True)
+    # TODO: reimplement extract best hyperparams so that it works for this too
+    return results, default_args
+
+
+def get_best_cca_clf(
+        h_load_file: str,
+        best: dict,
+        min_nb_trials: int = -1,
+        time_range: range = range(45, 46),
+        target: bool = True,
+        global_normalize: bool = True,
+        augment_data: bool = False,
+        xv_folds: int = 5,
+        which_fold: int = 0,
+        random_sate: int = 42, ):
+
+    data_trn, data_tst = prepare_cca_data(
+        h_load_file=h_load_file,
+        min_nb_trials=min_nb_trials,
+        target=target,
+        global_normalize=global_normalize,
+        augment_data=augment_data,
+        xv_folds=xv_folds,
+        which_fold=which_fold,
+        time_range=time_range,
+        verbose=False,
+    )
+    train_list, y_trn = data_trn['processed'], data_trn['labels']
+    test_list, y_tst = data_tst['processed'], data_tst['labels']
+
+    cca = rcca.CCA(
+        kernelcca=True,
+        ktype='linear',
+        reg=best['cca_reg'],
+        numCC=best['n_components'],
+        verbose=False,
+    )
+    cca.train([item / np.sqrt(best['n_components']) for item in train_list])
+    testcorrs = cca.validate(test_list)
+
+    corrs = []
+    for item in testcorrs:
+        corrs.append(np.mean(np.abs(item)))
+    pred_r = np.mean(corrs)
+
+    x_trn = [x @ w for x, w in zip(train_list, cca.ws)]
+    x_tst = [x @ w for x, w in zip(test_list, cca.ws)]
+    x_trn, x_tst = tuple(map(np.concatenate, [x_trn, x_tst]))
+
+    clf = LogisticRegression(
+        random_state=random_sate,
+        C=best['clf_reg'],
+        penalty='l1',
+        solver='liblinear',
+        class_weight='balanced',
+        max_iter=int(1e4),
+        tol=1e-6,
+    ).fit(x_trn, y_trn)
+    y_pred = clf.predict(x_tst)
+
+    balacc = balanced_accuracy_score(y_tst, y_pred)
+    mcc = matthews_corrcoef(y_tst, y_pred)
+
+    msg = "[PROGRESS] fitting done. results:\n"
+    msg += "corr: {:.3f},   balanced accuracy: {:.3f},   mcc: {:.3f}"
+    msg = msg.format(pred_r, balacc, mcc)
+    print(msg)
+
+    comps_trn, comps_df_trn = extract_components(data_trn, cca)
+    comps_tst, comps_df_tst = extract_components(data_tst, cca)
+
+    output = {
+        'data_trn': data_trn,
+        'data_tst': data_tst,
+        'cca': cca,
+        'clf': clf,
+        'comps_trn': comps_trn,
+        'comps_tst': comps_tst,
+        'comps_df_trn': comps_df_trn,
+        'comps_df_tst': comps_df_tst,
+    }
+    return output
+
+
+def extract_components(data: dict, cca):
+    df = pd.DataFrame()
+    components = []
+    for idx, name in enumerate(data['raw'].keys()):
+        comps = data['processed'][idx] @ cca.ws[idx]
+        components.append(comps)
+
+        data_dict = {'name': [name] * len(comps)}
+        for cc in range(comps.shape[1]):
+            data_dict.update({'component_{:d}'.format(cc): comps[:, cc]})
+        df = pd.concat([df, pd.DataFrame.from_dict(data_dict)])
+    return np.concatenate(components), reset_df(df)
+
+
+def fit_cca_clf_loop(
+        h_load_file: str,
+        n_seeds: int = 3,
+        rescale: bool = True,
+        save_file: str = None,
+        **kwargs, ):
+    save_file = 'results_cca_clf_{}.df'.format(now()) if save_file is None else save_file
     default_args = {
         'seeds': [int(2 ** i) for i in range(max(1, n_seeds))],
         'min_nb_trials': 100,
@@ -22,7 +204,7 @@ def fit_cca_loop(h_load_file: str, n_seeds: int = 3, save_file: str = None, **kw
         'augment_data': False,
         'xv_folds': 5,
         'time_range': range(45, 46),
-        'num_ccs': np.arange(5, 101, 5),
+        'num_ccs': np.arange(5, 91, 5),
         'cca_regs': np.logspace(-3, -1.5, num=20),
         'clf_regs': np.logspace(-3, -1.4, num=20),
         'clf_max_iter': int(1e3),
@@ -38,7 +220,7 @@ def fit_cca_loop(h_load_file: str, n_seeds: int = 3, save_file: str = None, **kw
         np.random.seed(random_state)
 
         for fold in tqdm(range(default_args['xv_folds']), leave=False):
-            output_trn, output_tst = prepare_cca_data(
+            data_trn, data_tst = prepare_cca_data(
                 h_load_file=h_load_file,
                 min_nb_trials=default_args['min_nb_trials'],
                 time_range=default_args['time_range'],
@@ -49,19 +231,25 @@ def fit_cca_loop(h_load_file: str, n_seeds: int = 3, save_file: str = None, **kw
                 which_fold=fold,
                 verbose=False,
             )
-            train_list, y_trn = output_trn['processed'], output_trn['labels']
-            test_list, y_tst = output_tst['processed'], output_tst['labels']
+            train_list, y_trn = data_trn['processed'], data_trn['labels']
+            test_list, y_tst = data_tst['processed'], data_tst['labels']
+            y_trn = _reshape_xy(y_trn, len(default_args['time_range']), dim=None)
+            y_tst = _reshape_xy(y_tst, len(default_args['time_range']), dim=None)
 
             for n_components in tqdm(default_args['num_ccs'], leave=False):
+                train_list_centered = [
+                    (item - item.mean()) / np.sqrt(n_components) if rescale else item - item.mean()
+                    for item in train_list
+                ]
                 for reg in tqdm(default_args['cca_regs'], leave=False):
                     cca = rcca.CCA(
                         kernelcca=True,
                         ktype='linear',
                         numCC=n_components,
                         reg=reg,
+                        cutoff=1e-15,
                         verbose=False,
-                    )
-                    cca.train([item / np.sqrt(n_components) for item in train_list])
+                    ).train(train_list_centered)
                     testcorrs = cca.validate(test_list)
 
                     corrs = []
@@ -72,6 +260,8 @@ def fit_cca_loop(h_load_file: str, n_seeds: int = 3, save_file: str = None, **kw
                     x_trn = [x @ w for x, w in zip(train_list, cca.ws)]
                     x_tst = [x @ w for x, w in zip(test_list, cca.ws)]
                     x_trn, x_tst = tuple(map(np.concatenate, [x_trn, x_tst]))
+                    x_trn = _reshape_xy(x_trn, len(default_args['time_range']), dim=n_components)
+                    x_tst = _reshape_xy(x_tst, len(default_args['time_range']), dim=n_components)
 
                     for C in default_args['clf_regs']:
                         clf = LogisticRegression(
@@ -98,51 +288,115 @@ def fit_cca_loop(h_load_file: str, n_seeds: int = 3, save_file: str = None, **kw
                             'value': [mcc, balacc, pred_r],
                         }
                         results = pd.concat([results, pd.DataFrame.from_dict(data_dict)])
+                save_obj(obj=results, file_name=save_file, save_dir='.', mode='df', verbose=False)
 
     results = reset_df(results)
+    save_obj(obj=results, file_name=save_file, save_dir='.', mode='df', verbose=True)
     best = extract_best_hyperparams(results, metric='mcc', verbose=True)
-
-    save_file = './results_{}.df'.format(now()) if save_file is None else save_file
-    results.to_pickle(save_file)
 
     return results, best, default_args
 
 
-def extract_best_hyperparams(results, metric: str = 'mcc', verbose: bool = True):
-    best_nc = -1
-    best_cca_reg = -1
-    best_clf_reg = -1
-    best_score = -1
+def extract_best_hyperparams2(
+        results: pd.DataFrame,
+        metrics: List[str] = 'mcc',
+        groupby: List[str] = None,
+        verbose: bool = True, ):
+    metrics = [metrics] if not isinstance(metrics, list) else list(metrics)
+    groupby = ['n_components', 'cca_reg', 'clf_reg'] if groupby is None else groupby
 
-    selected_df = results.loc[results.metric == metric]
+    def _xtract(_df, _metric):
+        _df = _df.loc[_df.metric == _metric]
+        _df = _df.groupby(by=groupby, as_index=False).mean()
+        _df = _df.iloc[_df.value.argmax()]
+        _best = {key: _df[key] for key in groupby}
+        return _best
 
-    for cca_reg in results.cca_reg.unique():
-        for clf_reg in results.clf_reg.unique():
-            for n_comps in results.n_components.unique():
-                current_score = selected_df.loc[
-                    (selected_df.cca_reg == cca_reg) &
-                    (selected_df.clf_reg == clf_reg) &
-                    (selected_df.n_components == n_comps)
-                ].value.mean()
+    df = results.copy(deep=True)
 
-                if current_score >= best_score:
-                    best_score = current_score
-                    best_cca_reg = cca_reg
-                    best_clf_reg = clf_reg
-                    best_nc = n_comps
+    for m in metrics:
+        best = _xtract(df, m)
+        df = results.loc[
+            (results.n_components == best['n_components']) &
+            (results.cca_reg == best['cca_reg'])
+        ]
+        # TODO: this is not fully implemented yet
+
+    for m in results.metric.unique():
+        selected_df = results.loc[
+            (results.n_components == best['n_components']) &
+            (results.cca_reg == best['cca_reg']) &
+            (results.clf_reg == best['clf_reg']) &
+            (results.metric == m),
+        ]
+        best.update({m: selected_df.value.mean()})
 
     if verbose:
         msg = 'best hyperparams:\n\n'
-        msg += 'n_components:\t{:d},\ncca_reg:\t{:.3e},\nclf_reg:\t{:.3e},\nscore:\t\t{:.4f}\n\n'
-        msg = msg.format(best_nc, best_cca_reg, best_clf_reg, best_score)
+        msg += 'n_components:\t{:d},\n'
+        msg += 'cca_reg:\t{:.3e},\n'
+        msg += 'clf_reg:\t{:.3e},\n'
+        msg += 'pred_r:\t\t{:.4f}\n'
+        msg += 'mcc:\t\t{:.4f}\n\n'
+        msg = msg.format(
+            best['n_components'],
+            best['cca_reg'],
+            best['clf_reg'],
+            best['pred_r'],
+            best['mcc'],
+        )
         print(msg)
 
-    best = {
-        'n_component': best_nc,
-        'cca_reg': best_cca_reg,
-        'best_clf_reg': best_clf_reg,
-        'score': best_score,
-    }
+    return best
+
+
+def extract_best_hyperparams(results, metric: str = None, verbose: bool = True):
+    def _xtract(_df, criterion):
+        _df = _df.loc[_df.metric == criterion]
+        _df = _df.groupby(['n_components', 'cca_reg', 'clf_reg'], as_index=False).mean()
+        _df = _df.iloc[_df.value.argmax()]
+        _best = {
+            'n_components': int(_df.n_components),
+            'cca_reg': float(_df.cca_reg),
+            'clf_reg': float(_df.clf_reg),
+        }
+        return _best
+
+    if metric is None:
+        best = _xtract(results, 'pred_r')
+        df = results.loc[
+            (results.n_components == best['n_components']) &
+            (results.cca_reg == best['cca_reg'])
+        ]
+        best = _xtract(df, 'mcc')
+    else:
+        best = _xtract(results, metric)
+
+    for m in ['pred_r', 'bal_acc', 'mcc']:
+        selected_df = results.loc[
+            (results.n_components == best['n_components']) &
+            (results.cca_reg == best['cca_reg']) &
+            (results.clf_reg == best['clf_reg']) &
+            (results.metric == m),
+        ]
+        best.update({m: selected_df.value.mean()})
+
+    if verbose:
+        msg = 'best hyperparams:\n\n'
+        msg += 'n_components:\t{:d},\n'
+        msg += 'cca_reg:\t{:.3e},\n'
+        msg += 'clf_reg:\t{:.3e},\n'
+        msg += 'pred_r:\t\t{:.4f}\n'
+        msg += 'mcc:\t\t{:.4f}\n\n'
+        msg = msg.format(
+            best['n_components'],
+            best['cca_reg'],
+            best['clf_reg'],
+            best['pred_r'],
+            best['mcc'],
+        )
+        print(msg)
+
     return best
 
 
@@ -160,7 +414,7 @@ def prepare_cca_data(
     key_label = 'target_labels' if target else 'target_labels'
     key_freq = 'target_freqs' if target else 'target_freqs'
 
-    raw_data = _load_target_nontarget(h_load_file)
+    raw_data = load_target_nontarget(h_load_file)
 
     unique_labels = np.unique(list(raw_data[key_label].values())[0])
     unique_freqs = np.unique(list(raw_data[key_freq].values())[0])
@@ -176,7 +430,9 @@ def prepare_cca_data(
         freq = raw_data[key_freq][name]
 
         if verbose:
-            print(name, dff.shape)
+            msg = 'expt name: {:s},\t\t(nt, ntrials, nc) = ({:d}, {:d}, {:d})'
+            msg = msg.format(name, *dff.shape)
+            print(msg)
 
         _trn, _tst = [], []
         _df_trn, _df_tst = pd.DataFrame(), pd.DataFrame()
@@ -185,7 +441,7 @@ def prepare_cca_data(
             for ff in unique_freqs:
                 _idxs = np.where((label == ll) & (freq == ff))[0]
                 global_sds.append(np.std(dff[time_range]))
-                global_means.append(np.std(dff[time_range]))
+                global_means.append(np.mean(dff[time_range]))
 
                 tst_indxs, trn_indxs = train_test_split(len(_idxs), xv_folds=xv_folds, which_fold=which_fold)
                 _tst.append(dff[time_range][:, tst_indxs, :])
@@ -219,9 +475,9 @@ def prepare_cca_data(
         tst = {k: (v - global_mean) / global_sd for k, v in tst.items()}
 
     train_list, y_trn, test_list, y_tst = _get_xy(trn, tst, df_trn, df_tst, augment_data)
-    output_trn = {'raw': trn, 'processed': train_list, 'labels': y_trn, 'df': df_trn}
-    output_tst = {'raw': tst, 'processed': test_list, 'labels': y_tst, 'df': df_tst}
-    return output_trn, output_tst
+    data_trn = {'raw': trn, 'processed': train_list, 'labels': y_trn, 'df': df_trn}
+    data_tst = {'raw': tst, 'processed': test_list, 'labels': y_tst, 'df': df_tst}
+    return data_trn, data_tst
 
 
 def _get_xy(trn, tst, df_trn, df_tst, augment_data: bool = False):
@@ -231,8 +487,12 @@ def _get_xy(trn, tst, df_trn, df_tst, augment_data: bool = False):
         train_list = [item[:, :num_trn, :].reshape(-1, item.shape[-1]) for item in trn.values()]
         test_list = [item[:, :num_tst, :].reshape(-1, item.shape[-1]) for item in tst.values()]
 
-        train_labels_list = [df_trn.loc[df_trn.name == name].label.tolist()[:num_trn] for name in trn.keys()]
-        test_labels_list = [df_tst.loc[df_tst.name == name].label.tolist()[:num_tst] for name in tst.keys()]
+        train_labels_list = [
+            df_trn.loc[df_trn.name == name].label.to_numpy().reshape(v.shape[0], -1)[:, :num_trn].flatten()
+            for name, v in trn.items()]
+        test_labels_list = [
+            df_tst.loc[df_tst.name == name].label.to_numpy().reshape(v.shape[0], -1)[:, :num_tst].flatten()
+            for name, v in tst.items()]
         y_trn, y_tst = tuple(map(np.concatenate, [train_labels_list, test_labels_list]))
 
     else:
@@ -242,7 +502,19 @@ def _get_xy(trn, tst, df_trn, df_tst, augment_data: bool = False):
     return train_list, y_trn, test_list, y_tst
 
 
-def _load_target_nontarget(h_load_file: str):
+# TODO: currently this is not used (each timepoint corresponds to a label)
+# When using PCA to reduce time using this function would make sense,
+# because: n_features = n_cca * n_pca
+def _reshape_xy(x, nt, dim: int = None):
+    if dim is not None:   # corresponds to train
+        x = x.reshape(nt, -1, dim)
+        x = np.transpose(x, (1, 0, 2))
+        return x.reshape(-1, nt * dim)
+    else:   # corresponds to test (all are equal)
+        return x.reshape(nt, -1)[0]
+
+
+def load_target_nontarget(h_load_file: str):
     target_dffs, nontarget_dffs = {}, {}
     target_labels, nontarget_labels = {}, {}
     target_freqs, nontarget_freqs = {}, {}
@@ -276,7 +548,7 @@ def _load_target_nontarget(h_load_file: str):
         nontarget_freqs[name] = trial_info['stimfrequency'][nontarget_indxs]
     f.close()
 
-    raw_data = {
+    target_nontarget_data = {
         'target_dffs': target_dffs,
         'target_labels': target_labels,
         'target_freqs': target_freqs,
@@ -284,7 +556,104 @@ def _load_target_nontarget(h_load_file: str):
         'nontarget_labels': nontarget_labels,
         'nontarget_freqs': nontarget_freqs,
     }
-    return raw_data
+    return target_nontarget_data
+
+
+# --------------------------- plotting functions -------------------------------
+# ------------------------------------------------------------------------------
+
+def plot_results(results: pd.DataFrame, best: dict, figsize=(9, 7), dpi=70):
+    sns.set_style('whitegrid')
+    plt.figure(figsize=figsize, dpi=dpi)
+
+    selected_df = results.loc[
+        (results.cca_reg == best['cca_reg']) &
+        (results.clf_reg == best['clf_reg'])
+    ]
+    sns.lineplot(data=selected_df, x='n_components', y='value', hue='metric',
+                 style='metric', markers=True, dashes=False, lw=3, markersize=5)
+    plt.axvline(best['n_components'], ls=':', color='k', alpha=0.7)
+    plt.xlabel('n_components', fontsize=12)
+    plt.xlabel('performance', fontsize=12)
+
+    msg = '# CCA componens vs. mcc, balanced accuracy, and pred correlations\n'
+    msg += 'performance increases as we introduce more and more components then saturates\n\n'
+    msg += 'best # components: {:d},  predicted canonical correlations = {:.3f}\n'
+    msg += 'best avg performance:  i) mcc = {:.3f},  ii) balanced accuracy = {:.3f}'
+    msg = msg.format(best['n_components'], best['pred_r'], best['mcc'], best['bal_acc'])
+    plt.suptitle(msg, fontsize=13, y=1.02)
+    plt.legend(loc='lower right')
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_reg_comparison2(
+        results: pd.DataFrame,
+        best: dict,
+        metric: str = 'mcc',
+        components: List[int] = None,
+        groupby: List[int] = None,
+        scale: str = 'log',
+        figsize=None,
+        dpi=70, ):
+
+    components = [75, 77, 78, 79, 80, 81] if components is None else components
+    groupby = ['cca_reg', 'clf_reg'] if groupby is None else groupby
+    assert len(groupby) == 2, "must provide 2 variabels to group by"
+
+    sns.set_style('whitegrid')
+    figsize = (2.25 * len(components), 6) if figsize is None else figsize
+    fig, axes = plt.subplots(3, len(components), figsize=figsize, dpi=dpi)
+    axes = axes.reshape(3, len(components))
+
+    for idx, cc in enumerate(components):
+        selected_df = results.loc[(results.n_components == cc) & (results.metric == metric)]
+        df = selected_df.groupby(groupby, as_index=False).mean()
+        df = df.pivot(index=groupby[0], columns=[groupby[1]], values='value')
+
+        sns.heatmap(data=df, xticklabels=False, yticklabels=False, vmin=0, vmax=best[metric], ax=axes[0, idx])
+        axes[0, idx].set_title('# components = {:d}'.format(cc))
+        axes[0, idx].set_aspect('equal')
+
+        for i in range(2):
+            a = df.mean(i)
+            axes[i + 1, idx].plot(a, lw=3)
+            axes[i + 1, idx].axvline(a.index[a.argmax()], lw=2, ls='--', color='tomato')
+            axes[i + 1, idx].set_xlabel(a.index.name)
+            axes[i + 1, idx].set_xscale(scale)
+
+    fig.tight_layout()
+    plt.show()
+
+
+def plot_reg_comparison(results, best, components: List[int] = None,
+                        scale: str = 'log', figsize=None, dpi=70):
+
+    components = [75, 77, 78, 79, 80, 81] if components is None else components
+    figsize = (2.25 * len(components), 6) if figsize is None else figsize
+
+    sns.set_style('whitegrid')
+    fig, axes = plt.subplots(3, len(components), figsize=figsize, dpi=dpi)
+    axes = axes.reshape(3, len(components))
+
+    for idx, cc in enumerate(components):
+        selected_df = results.loc[(results.n_components == cc) & (results.metric == 'mcc')]
+        df = selected_df.groupby(['cca_reg', 'clf_reg'], as_index=False).mean()
+        df = df.pivot(index='cca_reg', columns=['clf_reg'], values='value')
+
+        sns.heatmap(data=df, xticklabels=False, yticklabels=False, vmin=0, vmax=best['mcc'], ax=axes[0, idx])
+        axes[0, idx].set_title('# components = {:d}'.format(cc))
+        axes[0, idx].set_aspect('equal')
+
+        for i in range(2):
+            a = df.mean(i)
+            axes[i + 1, idx].plot(a, lw=3)
+            axes[i + 1, idx].axvline(a.index[a.argmax()], lw=2, ls='--', color='tomato')
+            axes[i + 1, idx].set_xlabel(a.index.name)
+            axes[i + 1, idx].set_xscale(scale)
+
+    fig.tight_layout()
+    plt.show()
 
 
 def _setup_args() -> argparse.Namespace:

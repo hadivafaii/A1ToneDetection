@@ -394,7 +394,7 @@ def _print_results(pls, sim, verbose):
     print(msg)
 
 
-# --------------------------- loop functions ---------------------------
+# --------------------------- loop functions -------------------------------
 # --------------------------------------------------------------------------
 
 def run_pls_loop(n_seeds: int = 10, equal_dims: bool = False, **kwargs):
