@@ -87,10 +87,10 @@ def fit_cca_loop(
                         'value': [pred_r],
                     }
                     results = pd.concat([results, pd.DataFrame.from_dict(data_dict)])
-            save_obj(obj=results, file_name=save_file, save_dir='.', mode='df', verbose=False)
+            save_obj(obj=results, file_name=save_file, save_dir='./results', mode='df', verbose=False)
 
     results = reset_df(results, downcast='none')
-    save_obj(obj=results, file_name=save_file, save_dir='.', mode='df', verbose=True)
+    save_obj(obj=results, file_name=save_file, save_dir='./results', mode='df', verbose=True)
     # TODO: reimplement extract best hyperparams so that it works for this too
     return results, default_args
 
@@ -288,10 +288,10 @@ def fit_cca_clf_loop(
                             'value': [mcc, balacc, pred_r],
                         }
                         results = pd.concat([results, pd.DataFrame.from_dict(data_dict)])
-                save_obj(obj=results, file_name=save_file, save_dir='.', mode='df', verbose=False)
+                save_obj(obj=results, file_name=save_file, save_dir='./results', mode='df', verbose=False)
 
     results = reset_df(results)
-    save_obj(obj=results, file_name=save_file, save_dir='.', mode='df', verbose=True)
+    save_obj(obj=results, file_name=save_file, save_dir='./results', mode='df', verbose=True)
     best = extract_best_hyperparams(results, metric='mcc', verbose=True)
 
     return results, best, default_args

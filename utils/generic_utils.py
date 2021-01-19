@@ -49,12 +49,12 @@ def cos_similarity(i, ii):
 
 def train_test_split(n_samples: int, xv_folds: int = 5, which_fold: int = 0):
     which_fold = which_fold % xv_folds
-    num_tst_indxs = int(np.floor(n_samples / xv_folds))
+    num_tst_indxs = int(np.ceil(n_samples / xv_folds))
 
     start = which_fold * num_tst_indxs
     stop = min((which_fold + 1) * num_tst_indxs, n_samples)
     tst_indxs = range(start, stop)
-    trn_indxs = np.delete(np.arange(n_samples), tst_indxs)
+    trn_indxs = np.delete(range(n_samples), tst_indxs)
 
     assert not set(tst_indxs).intersection(set(trn_indxs))
     return tst_indxs, trn_indxs
@@ -93,7 +93,7 @@ def smoothen(arr: np.ndarray, filter_sz: int = 5):
         return smoothed
 
 
-def downsample(data, xy, xbins, ybins, normalize=True):
+def downsample(data, xy, xbins, ybins, normal=True):
     xbins = sorted(xbins)
     ybins = sorted(ybins)
     assert len(xbins) == len(ybins)
@@ -124,7 +124,7 @@ def downsample(data, xy, xbins, ybins, normalize=True):
         downsampled[bin_j, bin_i] += data[cell]
         _norm[bin_j, bin_i] += 1
 
-    if normalize:
+    if normal:
         return np.divide(downsampled, np.maximum(_norm, 1e-8))
     else:
         return downsampled
