@@ -8,6 +8,8 @@ from sklearn.metrics import matthews_corrcoef, balanced_accuracy_score
 sys.path.append('..')
 from utils.generic_utils import *
 from tqdm.notebook import tqdm
+from scipy.stats import zscore
+from pprint import pprint
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -203,7 +205,7 @@ def fit_cca_clf_loop(
         'global_normalize': True,
         'augment_data': False,
         'xv_folds': 5,
-        'time_range': range(45, 46),
+        'timepoint': 45,
         'num_ccs': np.arange(5, 91, 5),
         'cca_regs': np.logspace(-3, -1.5, num=20),
         'clf_regs': np.logspace(-3, -1.4, num=20),
@@ -223,18 +225,16 @@ def fit_cca_clf_loop(
             data_trn, data_tst = prepare_cca_data(
                 h_load_file=h_load_file,
                 min_nb_trials=default_args['min_nb_trials'],
-                time_range=default_args['time_range'],
+                timepoint=default_args['timepoint'],
                 target=default_args['target'],
-                global_normalize=default_args['global_normalize'],
-                augment_data=default_args['augment_data'],
+                normalize_mode='zscore',
+                augment=default_args['augment_data'],
                 xv_folds=default_args['xv_folds'],
                 which_fold=fold,
                 verbose=False,
             )
             train_list, y_trn = data_trn['processed'], data_trn['labels']
             test_list, y_tst = data_tst['processed'], data_tst['labels']
-            y_trn = _reshape_xy(y_trn, len(default_args['time_range']), dim=None)
-            y_tst = _reshape_xy(y_tst, len(default_args['time_range']), dim=None)
 
             for n_components in tqdm(default_args['num_ccs'], leave=False):
                 train_list_centered = [
@@ -260,8 +260,6 @@ def fit_cca_clf_loop(
                     x_trn = [x @ w for x, w in zip(train_list, cca.ws)]
                     x_tst = [x @ w for x, w in zip(test_list, cca.ws)]
                     x_trn, x_tst = tuple(map(np.concatenate, [x_trn, x_tst]))
-                    x_trn = _reshape_xy(x_trn, len(default_args['time_range']), dim=n_components)
-                    x_tst = _reshape_xy(x_tst, len(default_args['time_range']), dim=n_components)
 
                     for C in default_args['clf_regs']:
                         clf = LogisticRegression(
@@ -405,113 +403,150 @@ def prepare_cca_data(
         min_nb_trials: int = -1,
         time_range: range = range(45, 46),
         target: bool = True,
-        global_normalize: bool = True,
-        augment_data: bool = False,
+        normalize_mode: str = 'none',
+        full_align: bool = False,
+        augment: bool = False,
         xv_folds: int = 5,
         which_fold: int = 0,
         verbose: bool = False, ):
     key_dff = 'target_dffs' if target else 'nontarget_dffs'
-    key_label = 'target_labels' if target else 'target_labels'
-    key_freq = 'target_freqs' if target else 'target_freqs'
+    key_label = 'target_labels' if target else 'nontarget_labels'
+    key_freq = 'target_freqs' if target else 'nontarget_freqs'
 
     raw_data = load_target_nontarget(h_load_file)
 
     unique_labels = np.unique(list(raw_data[key_label].values())[0])
     unique_freqs = np.unique(list(raw_data[key_freq].values())[0])
 
-    trn, tst = {}, {}
-    df_trn, df_tst = pd.DataFrame(), pd.DataFrame()
-
-    global_sds, global_means = [], []
+    aligned_tst, aligned_trn = {}, {}
+    aligned_label_tst, aligned_label_trn = {}, {}
     for name, dff in raw_data[key_dff].items():
         if dff.shape[1] < min_nb_trials:
             continue
-        label = raw_data[key_label][name]
-        freq = raw_data[key_freq][name]
 
         if verbose:
             msg = 'expt name: {:s},\t\t(nt, ntrials, nc) = ({:d}, {:d}, {:d})'
             msg = msg.format(name, *dff.shape)
             print(msg)
 
-        _trn, _tst = [], []
-        _df_trn, _df_tst = pd.DataFrame(), pd.DataFrame()
+        label = raw_data[key_label][name]
+        freq = raw_data[key_freq][name]
 
+        local_tst, local_trn = {}, {}
+        local_label_tst, local_label_trn = {}, {}
         for ll in unique_labels:
-            for ff in unique_freqs:
-                _idxs = np.where((label == ll) & (freq == ff))[0]
-                global_sds.append(np.std(dff[time_range]))
-                global_means.append(np.mean(dff[time_range]))
+            if full_align:
+                for ff in unique_freqs:
+                    _idxs = np.where((label == ll) & (freq == ff))[0]
+                    tst_indxs, trn_indxs = train_test_split(
+                        n_samples=len(_idxs),
+                        xv_folds=xv_folds,
+                        which_fold=which_fold,
+                    )
+                    _key = 'll:{:d}-ff:{:d}'.format(ll, ff)
+                    local_tst[_key] = dff[time_range][:, _idxs[tst_indxs], :]
+                    local_trn[_key] = dff[time_range][:, _idxs[trn_indxs], :]
+                    local_label_tst[_key] = label[_idxs[tst_indxs]]
+                    local_label_trn[_key] = label[_idxs[trn_indxs]]
 
-                tst_indxs, trn_indxs = train_test_split(len(_idxs), xv_folds=xv_folds, which_fold=which_fold)
-                _tst.append(dff[time_range][:, tst_indxs, :])
-                _trn.append(dff[time_range][:, trn_indxs, :])
+            else:
+                _idxs = np.where(label == ll)[0]
+                tst_indxs, trn_indxs = train_test_split(
+                    n_samples=len(_idxs),
+                    xv_folds=xv_folds,
+                    which_fold=which_fold,
+                )
+                _key = 'll:{:d}'.format(ll)
+                local_tst[_key] = dff[time_range][:, _idxs[tst_indxs], :]
+                local_trn[_key] = dff[time_range][:, _idxs[trn_indxs], :]
+                local_label_tst[_key] = label[_idxs[tst_indxs]]
+                local_label_trn[_key] = label[_idxs[trn_indxs]]
 
-                timepoint = np.expand_dims(time_range, 1)
-                data_dict_tst = {
-                    'timepoint': np.repeat(timepoint, len(tst_indxs), axis=1).flatten(),
-                    'name': [name] * len(tst_indxs) * len(time_range),
-                    'label': [ll] * len(tst_indxs) * len(time_range),
-                    'freq': [ff] * len(tst_indxs) * len(time_range),
-                }
-                data_dict_trn = {
-                    'timepoint': np.repeat(timepoint, len(trn_indxs), axis=1).flatten(),
-                    'name': [name] * len(trn_indxs) * len(time_range),
-                    'label': [ll] * len(trn_indxs) * len(time_range),
-                    'freq': [ff] * len(trn_indxs) * len(time_range),
-                }
-                _df_tst = pd.concat([_df_tst, pd.DataFrame.from_dict(data_dict_tst)])
-                _df_trn = pd.concat([_df_trn, pd.DataFrame.from_dict(data_dict_trn)])
+        aligned_tst[name] = local_tst
+        aligned_trn[name] = local_trn
+        aligned_label_tst[name] = local_label_tst
+        aligned_label_trn[name] = local_label_trn
 
-        tst[name] = np.concatenate(_tst, axis=1)
-        trn[name] = np.concatenate(_trn, axis=1)
-        df_tst = pd.concat([df_tst, _df_tst])
-        df_trn = pd.concat([df_trn, _df_trn])
+    cat_tst, labels_tst = combine(
+        data=aligned_tst,
+        labels=aligned_label_tst,
+        augment=augment,
+        verbose=verbose,
+    )
+    cat_trn, labels_trn = combine(
+        data=aligned_trn,
+        labels=aligned_label_trn,
+        augment=augment,
+        verbose=verbose,
+    )
 
-    if global_normalize:
-        global_sd = np.mean(global_sds)
-        global_mean = np.mean(global_means)
-        trn = {k: (v - global_mean) / global_sd for k, v in trn.items()}
-        tst = {k: (v - global_mean) / global_sd for k, v in tst.items()}
+    if normalize_mode == 'zscore':
+        cat_tst = {name: zscore(v.reshape(-1, v.shape[-1]), axis=0).reshape(*v.shape) for name, v in cat_tst.items()}
+        cat_trn = {name: zscore(v.reshape(-1, v.shape[-1]), axis=0).reshape(*v.shape) for name, v in cat_trn.items()}
+        # cat_trn = {name: zscore(v, axis=0) for name, v in cat_trn.items()}
+    elif normalize_mode == 'center':
+        global_mean = np.mean(
+            [item.mean() for item in cat_tst.values()] +
+            [item.mean() for item in cat_trn.values()]
+        )
+        global_sd = np.mean(
+            [item.std() for item in cat_tst.values()] +
+            [item.std() for item in cat_trn.values()]
+        )
+        cat_tst = {name: (v - global_mean) / global_sd for name, v in cat_tst.items()}
+        cat_trn = {name: (v - global_mean) / global_sd for name, v in cat_trn.items()}
 
-    train_list, y_trn, test_list, y_tst = _get_xy(trn, tst, df_trn, df_tst, augment_data)
-    data_trn = {'raw': trn, 'processed': train_list, 'labels': y_trn, 'df': df_trn}
-    data_tst = {'raw': tst, 'processed': test_list, 'labels': y_tst, 'df': df_tst}
-    return data_trn, data_tst
+    data_tst = {
+        'aligned': aligned_tst,
+        'cat': cat_tst,
+        'lbl': labels_tst,
+        'x': list(cat_tst.values()),
+        'y': np.concatenate(list(labels_tst.values())),
+    }
+    data_trn = {
+        'aligned': aligned_trn,
+        'cat': cat_trn,
+        'lbl': labels_trn,
+        'x': list(cat_trn.values()),
+        'y': np.concatenate(list(labels_trn.values())),
+    }
+    return data_tst, data_trn, list(cat_tst.keys())
 
 
-def _get_xy(trn, tst, df_trn, df_tst, augment_data: bool = False):
-    if not augment_data:
-        num_tst = min([item.shape[1] for item in tst.values()])
-        num_trn = min([item.shape[1] for item in trn.values()])
-        train_list = [item[:, :num_trn, :].reshape(-1, item.shape[-1]) for item in trn.values()]
-        test_list = [item[:, :num_tst, :].reshape(-1, item.shape[-1]) for item in tst.values()]
+def combine(
+        data: Dict[str, dict],
+        labels: Dict[str, dict],
+        augment: bool = False,
+        verbose: bool = False, ):
+    num_samples = [v.shape[1] for d in data.values() for v in d.values()]
+    min_num_samples_global = min(num_samples)
+    max_num_samples_global = max(num_samples)
 
-        train_labels_list = [
-            df_trn.loc[df_trn.name == name].label.to_numpy().reshape(v.shape[0], -1)[:, :num_trn].flatten()
-            for name, v in trn.items()]
-        test_labels_list = [
-            df_tst.loc[df_tst.name == name].label.to_numpy().reshape(v.shape[0], -1)[:, :num_tst].flatten()
-            for name, v in tst.items()]
-        y_trn, y_tst = tuple(map(np.concatenate, [train_labels_list, test_labels_list]))
+    aligned_num_samples = {name: [v.shape[1] for v in d.values()] for name, d in data.items()}
+    num_samples_dict = {name: sum(v) for name, v in aligned_num_samples.items()}
+    min_num_shared_samples = min(num_samples_dict.values())
+
+    if augment:
+        raise NotImplementedError
+        # TODO: figure out augmentation
 
     else:
-        raise NotImplementedError
-    # TODO: figure out augmentation
+        data_cat = {name: np.concatenate(list(d.values()), axis=1) for name, d in data.items()}
+        labels_cat = {name: np.concatenate(list(d.values())) for name, d in labels.items()}
 
-    return train_list, y_trn, test_list, y_tst
+        data_final = {name: d[:, :min_num_shared_samples, :] for name, d in data_cat.items()}
+        labels_final = {name: d[:min_num_shared_samples] for name, d in labels_cat.items()}
 
+    if verbose:
+        print('\n\n')
+        pprint(num_samples)
+        print(min_num_samples_global, max_num_samples_global, min_num_shared_samples, '\n')
+        pprint(list(list(data.values())[0].keys()))
+        pprint(aligned_num_samples)
+        # pprint(num_samples_dict)
+        pprint({name: v.shape for name, v in data_cat.items()})
 
-# TODO: currently this is not used (each timepoint corresponds to a label)
-# When using PCA to reduce time using this function would make sense,
-# because: n_features = n_cca * n_pca
-def _reshape_xy(x, nt, dim: int = None):
-    if dim is not None:   # corresponds to train
-        x = x.reshape(nt, -1, dim)
-        x = np.transpose(x, (1, 0, 2))
-        return x.reshape(-1, nt * dim)
-    else:   # corresponds to test (all are equal)
-        return x.reshape(nt, -1)[0]
+    return data_final, labels_final
 
 
 def load_target_nontarget(h_load_file: str):
@@ -537,6 +572,18 @@ def load_target_nontarget(h_load_file: str):
 
         target_indxs = np.where(trial_info['target'])[0]
         nontarget_indxs = np.where(trial_info['nontarget'])[0]
+
+        valid_target_indxs = np.where(
+            trial_info['hit'][target_indxs] +
+            trial_info['miss'][target_indxs]
+        )[0]
+        valid_nontarget_indxs = np.where(
+            trial_info['correctreject'][target_indxs] +
+            trial_info['falsealarm'][target_indxs]
+        )[0]
+
+        target_indxs = target_indxs[valid_target_indxs]
+        nontarget_indxs = nontarget_indxs[valid_nontarget_indxs]
 
         target_dffs[name] = dff[:, target_indxs, :]
         nontarget_dffs[name] = dff[:, nontarget_indxs, :]
